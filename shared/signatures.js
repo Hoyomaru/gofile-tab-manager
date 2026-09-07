@@ -7,16 +7,14 @@
     DEAD_STRONG_TEXT: Object.freeze([
       /\bcontent\s+does\s+not\s+exist\b/i,
       /\bcontent\s+not\s+found\b/i,
-      /\bfile\s+not\s+found\b/i,
-      /\bfolder\s+not\s+found\b/i,
       /\bthis\s+content\s+(?:has\s+been\s+)?deleted\b/i,
       /\bthis\s+content\s+(?:has\s+been\s+)?removed\b/i,
       /\bthe\s+requested\s+content\s+(?:does\s+not\s+exist|was\s+not\s+found)\b/i
     ]),
     DEAD_ERROR_CONTAINER_TEXT: Object.freeze([
-      /^deleted\.?$/i,
-      /^removed\.?$/i,
-      /^not\s+found\.?$/i
+      /^content\s+(?:does\s+not\s+exist|not\s+found)\.?$/i,
+      /^this\s+content\s+(?:has\s+been\s+)?(?:deleted|removed)\.?$/i,
+      /^the\s+requested\s+content\s+(?:does\s+not\s+exist|was\s+not\s+found)\.?$/i
     ]),
     NON_DEAD_ATTENTION_TEXT: Object.freeze([
       /\bpassword\s+(?:is\s+)?required\b/i,
@@ -33,20 +31,18 @@
       /\bbad\s+gateway\b/i,
       /\bservice\s+unavailable\b/i,
       /\bgateway\s+timeout\b/i,
-      /\bunknown\s+error\b/i
+      /\bunknown\s+error\b/i,
+      /\b(?:401|403)\b/i,
+      /\b5\d{2}\b/
     ]),
     RATE_LIMIT_TEXT: Object.freeze([
       /\b429\b/,
       /\btoo\s+many\s+requests\b/i,
       /\brate\s+limit(?:ed|ing)?\b/i
     ]),
-    ERROR_CONTAINER_SELECTORS: Object.freeze([
-      '[role="alert"]',
-      '[class*="error" i]',
-      '[class*="not-found" i]',
-      '[class*="notfound" i]',
-      '[data-testid*="error" i]'
-    ]),
+    // A semantic alert is the only DOM source accepted as a DEAD signal. Broad
+    // class/test-id selectors also match toasts, dialogs, and unrelated errors.
+    ERROR_CONTAINER_SELECTORS: Object.freeze(['[role="alert"]']),
     NORMAL_TITLE_SELECTORS: Object.freeze([
       'main h1',
       'main h2',

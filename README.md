@@ -85,4 +85,4 @@ Popupの `Recent auto-closed` から「再オープン」を押すと、保存�
 
 ## テスト状況
 
-自動で確認可能な構成・静的安全性を確認しています。この実行環境では管理者ポリシーによりunpacked拡張の読み込み自体が拒否されたため、Manifest V3拡張としての最終ロード確認、Gofile実ページ上のDOM判定、複数ウィンドウ、tab group、pinned、実際の自動closeなどは `tests/TEST_RESULTS.md` に「実ブラウザ確認が必要」と明記しています。
+`node --test tests/regression.test.js` で、実コードをNodeのVMへ読み込み、DOM → classification → message → metadata → reconciliation → remove と、pending navigation、tab group、pinned、window、replacement、storage失敗をモック検証できます。実行結果と、実ブラウザでのみ確認できる項目は `tests/TEST_RESULTS.md` に記録します。

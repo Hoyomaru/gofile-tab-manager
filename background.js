@@ -8,10 +8,18 @@ const { STATES, CLOSE_REASONS, STORAGE_KEYS, HISTORY_LIMIT, MESSAGE_TYPES } = Co
 const TAB_GROUP_NONE = -1;
 const tabMeta = new Map();
 const closingTabIds = new Set();
+const pendingCloseOperations = new Map();
+const unsavedHistoryEntries = new Map();
+const navigationVersions = new Map();
+const classificationRevisions = new Map();
+const latestRouteGenerations = new Map();
+const sortChains = new Map();
 let historyWriteChain = Promise.resolve();
+let historyRetryHandle = null;
 let reconciliationChain = Promise.resolve();
 let initialized = false;
 let initializationPromise = null;
+let closeSequence = 0;
 
 function isProtected(tab) {
   return Boolean(tab?.pinned) || (Number.isInteger(tab?.groupId) && tab.groupId !== TAB_GROUP_NONE);
@@ -21,20 +29,96 @@ function sanitizeState(state) {
   return Object.values(STATES).includes(state) && state !== STATES.PROTECTED ? state : STATES.ATTENTION;
 }
 
+function nextNavigationVersion(tabId) {
+  const version = (navigationVersions.get(tabId) || 0) + 1;
+  navigationVersions.set(tabId, version);
+  return version;
+}
+
+function nextClassificationRevision(tabId) {
+  const revision = (classificationRevisions.get(tabId) || 0) + 1;
+  classificationRevisions.set(tabId, revision);
+  return revision;
+}
+
+function routeGenerationKey(tabId, documentId = null) {
+  return `${tabId}|${documentId || ''}`;
+}
+
+function clearRouteGenerations(tabId) {
+  const prefix = `${tabId}|`;
+  for (const key of latestRouteGenerations.keys()) {
+    if (key.startsWith(prefix)) {
+      latestRouteGenerations.delete(key);
+    }
+  }
+}
+
+function rememberRouteGeneration(tabId, documentId, generation) {
+  if (!Number.isInteger(tabId) || !Number.isInteger(generation)) {
+    return;
+  }
+  const key = routeGenerationKey(tabId, documentId);
+  latestRouteGenerations.set(key, Math.max(latestRouteGenerations.get(key) || 0, generation));
+}
+
+function deleteTabMeta(tabId) {
+  tabMeta.delete(tabId);
+  navigationVersions.delete(tabId);
+  classificationRevisions.delete(tabId);
+  clearRouteGenerations(tabId);
+}
+
+function isTabNavigationInProgress(tab) {
+  return Boolean(typeof tab?.pendingUrl === 'string' && tab.pendingUrl.length > 0) || tab?.status === 'loading';
+}
+
 function metaForTab(tab, previous = null, fallbackSeenAt = Date.now()) {
   const canonicalUrl = Url.canonicalizeGofileUrl(tab.url || '');
   if (!canonicalUrl) {
     return null;
   }
 
+  const sameUrl = previous?.canonicalUrl === canonicalUrl;
   return {
     tabId: tab.id,
     canonicalUrl,
-    state: previous?.canonicalUrl === canonicalUrl ? sanitizeState(previous.state) : STATES.LOADING,
-    firstSeenAt: previous?.canonicalUrl === canonicalUrl && Number.isFinite(previous.firstSeenAt)
+    state: sameUrl ? sanitizeState(previous.state) : STATES.LOADING,
+    firstSeenAt: sameUrl && Number.isFinite(previous.firstSeenAt)
       ? previous.firstSeenAt
       : fallbackSeenAt,
-    observedAt: previous?.canonicalUrl === canonicalUrl ? (previous.observedAt || 0) : 0
+    observedAt: sameUrl ? (previous.observedAt || 0) : 0,
+    navigationVersion: sameUrl && Number.isInteger(previous.navigationVersion)
+      ? previous.navigationVersion
+      : nextNavigationVersion(tab.id),
+    documentId: sameUrl ? (previous.documentId || null) : null,
+    routeGeneration: sameUrl && Number.isInteger(previous.routeGeneration)
+      ? previous.routeGeneration
+      : 0,
+    classificationRevision: sameUrl && Number.isInteger(previous.classificationRevision)
+      ? previous.classificationRevision
+      : nextClassificationRevision(tab.id),
+    pendingNavigation: isTabNavigationInProgress(tab)
+  };
+}
+
+function loadingMetaForTab(tab, previous, canonicalUrl, pendingNavigation, firstSeenAt = Date.now()) {
+  if (!canonicalUrl) {
+    return null;
+  }
+
+  const sameUrl = previous?.canonicalUrl === canonicalUrl;
+  return {
+    tabId: tab.id,
+    canonicalUrl,
+    state: STATES.LOADING,
+    firstSeenAt: sameUrl && Number.isFinite(previous.firstSeenAt) ? previous.firstSeenAt : firstSeenAt,
+    observedAt: 0,
+    navigationVersion: nextNavigationVersion(tab.id),
+    documentId: null,
+    routeGeneration: 0,
+    classificationRevision: nextClassificationRevision(tab.id),
+    pendingNavigation
   };
 }
 
@@ -62,6 +146,150 @@ async function persistSessionMeta() {
   }
 }
 
+function pendingCloseObject() {
+  const result = {};
+  for (const [operationId, operation] of pendingCloseOperations) {
+    result[operationId] = operation;
+  }
+  return result;
+}
+
+async function persistPendingCloseOperations() {
+  try {
+    if (!chrome.storage.session?.set) {
+      return false;
+    }
+    await chrome.storage.session.set({ [STORAGE_KEYS.PENDING_CLOSES]: pendingCloseObject() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadPendingCloseOperations() {
+  try {
+    if (!chrome.storage.session?.get) {
+      return {};
+    }
+    const result = await chrome.storage.session.get(STORAGE_KEYS.PENDING_CLOSES);
+    return result?.[STORAGE_KEYS.PENDING_CLOSES] || {};
+  } catch {
+    return {};
+  }
+}
+
+function historyEntryKey(entry, operationId = null) {
+  return operationId || entry?.closeId || `${entry?.sourceTabId}|${entry?.closedAt}|${entry?.reason}|${entry?.canonicalUrl}`;
+}
+
+function scheduleHistoryRetry() {
+  if (historyRetryHandle !== null || unsavedHistoryEntries.size === 0) {
+    return;
+  }
+  historyRetryHandle = setTimeout(() => {
+    historyRetryHandle = null;
+    flushCloseHistory().catch(() => {});
+  }, 1000);
+}
+
+function queueUnsavedHistory(entry, operationId = null) {
+  const key = historyEntryKey(entry, operationId);
+  unsavedHistoryEntries.set(key, { ...entry, closeId: entry.closeId || key });
+  scheduleHistoryRetry();
+}
+
+async function flushCloseHistory() {
+  historyWriteChain = historyWriteChain.then(async () => {
+    if (unsavedHistoryEntries.size === 0) {
+      return;
+    }
+
+    const stored = await chrome.storage.local.get(STORAGE_KEYS.CLOSE_HISTORY);
+    const history = Array.isArray(stored?.[STORAGE_KEYS.CLOSE_HISTORY])
+      ? [...stored[STORAGE_KEYS.CLOSE_HISTORY]]
+      : [];
+    const existingIds = new Set(history.map((entry) => entry?.closeId).filter(Boolean));
+    const toPersist = [...unsavedHistoryEntries.entries()];
+
+    for (const [key, entry] of toPersist) {
+      if (!existingIds.has(entry.closeId)) {
+        history.unshift(entry);
+        existingIds.add(entry.closeId);
+      }
+    }
+    if (history.length > HISTORY_LIMIT) {
+      history.length = HISTORY_LIMIT;
+    }
+
+    await chrome.storage.local.set({ [STORAGE_KEYS.CLOSE_HISTORY]: history });
+
+    for (const [key] of toPersist) {
+      unsavedHistoryEntries.delete(key);
+      pendingCloseOperations.delete(key);
+    }
+    await persistPendingCloseOperations();
+  }).catch(() => {
+    scheduleHistoryRetry();
+  });
+
+  return historyWriteChain;
+}
+
+async function appendCloseHistory(entry, operationId = null) {
+  queueUnsavedHistory(entry, operationId);
+  await flushCloseHistory();
+}
+
+async function recoverPendingCloseOperations(tabs) {
+  const stored = await loadPendingCloseOperations();
+  for (const [operationId, operation] of Object.entries(stored)) {
+    const live = tabs.find((tab) => tab.id === operation?.entry?.sourceTabId);
+    if (live) {
+      // The remove did not complete before the worker stopped. Do not record it.
+      continue;
+    }
+
+    // Only a durably recorded 'removed' phase proves that this worker observed
+    // a successful remove. A pending/remove-issued operation may instead have
+    // failed and then been closed by something else while the worker was down.
+    // Do not turn that ambiguity into a successful auto-close history entry.
+    if (operation?.phase === 'removed' && operation.entry) {
+      pendingCloseOperations.set(operationId, operation);
+      queueUnsavedHistory(operation.entry, operationId);
+    }
+  }
+  await persistPendingCloseOperations();
+  await flushCloseHistory();
+}
+
+async function prepareCloseOperation(entry) {
+  const operationId = `${entry.sourceTabId}:${entry.closedAt}:${++closeSequence}`;
+  pendingCloseOperations.set(operationId, {
+    tabId: entry.sourceTabId,
+    phase: 'pending',
+    entry: { ...entry, closeId: operationId }
+  });
+  if (!await persistPendingCloseOperations()) {
+    pendingCloseOperations.delete(operationId);
+    return null;
+  }
+  return operationId;
+}
+
+async function setCloseOperationPhase(operationId, phase) {
+  const operation = pendingCloseOperations.get(operationId);
+  if (!operation) {
+    return false;
+  }
+  operation.phase = phase;
+  return persistPendingCloseOperations();
+}
+
+async function cancelCloseOperation(operationId) {
+  pendingCloseOperations.delete(operationId);
+  await persistPendingCloseOperations();
+}
+
 async function initializeFromLiveTabs() {
   const [tabs, stored] = await Promise.all([
     chrome.tabs.query({}),
@@ -69,6 +297,10 @@ async function initializeFromLiveTabs() {
   ]);
 
   tabMeta.clear();
+  navigationVersions.clear();
+  classificationRevisions.clear();
+  latestRouteGenerations.clear();
+
   const ordered = [...tabs].filter((tab) => Number.isInteger(tab.id)).sort((a, b) => a.id - b.id);
   const base = Date.now();
 
@@ -80,17 +312,15 @@ async function initializeFromLiveTabs() {
 
     const saved = stored[String(tab.id)];
     const sameUrl = saved?.canonicalUrl === canonicalUrl;
-    tabMeta.set(tab.id, {
-      tabId: tab.id,
-      canonicalUrl,
-      // Re-classification by the content script is required after worker start.
-      state: STATES.LOADING,
-      firstSeenAt: sameUrl && Number.isFinite(saved.firstSeenAt) ? saved.firstSeenAt : base + index,
-      observedAt: 0
-    });
+    const meta = metaForTab(tab, null, sameUrl && Number.isFinite(saved.firstSeenAt) ? saved.firstSeenAt : base + index);
+    meta.state = STATES.LOADING;
+    meta.observedAt = 0;
+    meta.pendingNavigation = isTabNavigationInProgress(tab);
+    tabMeta.set(tab.id, meta);
   });
 
   initialized = true;
+  await recoverPendingCloseOperations(tabs);
   await persistSessionMeta();
   await synchronizeClassifications(tabs);
   await reconcileDuplicates();
@@ -106,10 +336,9 @@ function startInitialization() {
 }
 
 async function ensureInitialized() {
-  if (initialized) {
-    return;
+  if (!initialized) {
+    await startInitialization();
   }
-  await startInitialization();
 }
 
 function enqueueReconciliation() {
@@ -119,71 +348,187 @@ function enqueueReconciliation() {
   return reconciliationChain;
 }
 
-async function appendCloseHistory(entry) {
-  historyWriteChain = historyWriteChain.then(async () => {
-    const stored = await chrome.storage.local.get(STORAGE_KEYS.CLOSE_HISTORY);
-    const history = Array.isArray(stored?.[STORAGE_KEYS.CLOSE_HISTORY])
-      ? stored[STORAGE_KEYS.CLOSE_HISTORY]
-      : [];
-    history.unshift(entry);
-    if (history.length > HISTORY_LIMIT) {
-      history.length = HISTORY_LIMIT;
-    }
-    await chrome.storage.local.set({ [STORAGE_KEYS.CLOSE_HISTORY]: history });
-  }).catch(() => {});
-
-  return historyWriteChain;
+function sameMetaIdentity(actual, expected) {
+  return Boolean(actual && expected) &&
+    actual.canonicalUrl === expected.canonicalUrl &&
+    actual.navigationVersion === expected.navigationVersion &&
+    actual.classificationRevision === expected.classificationRevision &&
+    (actual.documentId || null) === (expected.documentId || null) &&
+    actual.routeGeneration === expected.routeGeneration;
 }
 
-async function closeTabSafely(tab, reason, expectedCanonicalUrl) {
+function isStableLiveTab(tab, expectedCanonicalUrl) {
+  return Boolean(tab) &&
+    Url.canonicalizeGofileUrl(tab.url || '') === expectedCanonicalUrl &&
+    !isProtected(tab) &&
+    !isTabNavigationInProgress(tab);
+}
+
+async function validateDuplicatePlan(plan, liveVictim) {
+  if (!plan?.survivor?.tab || !plan?.survivor?.meta || !plan?.victim?.meta) {
+    return false;
+  }
+
+  let liveSurvivor;
+  try {
+    liveSurvivor = await chrome.tabs.get(plan.survivor.tab.id);
+  } catch {
+    return false;
+  }
+
+  const canonicalUrl = plan.canonicalUrl;
+  if (!isStableLiveTab(liveVictim, canonicalUrl) ||
+      Url.canonicalizeGofileUrl(liveSurvivor.url || '') !== canonicalUrl ||
+      isTabNavigationInProgress(liveSurvivor) ||
+      closingTabIds.has(liveSurvivor.id) ||
+      liveVictim.id === liveSurvivor.id) {
+    return false;
+  }
+
+  const victimMeta = tabMeta.get(liveVictim.id);
+  const survivorMeta = tabMeta.get(liveSurvivor.id);
+  if (!sameMetaIdentity(victimMeta, plan.victim.meta) ||
+      !sameMetaIdentity(survivorMeta, plan.survivor.meta)) {
+    return false;
+  }
+
+  // An unprotected survivor that is already being classified DEAD is not a
+  // valid anchor. Otherwise a concurrent DEAD close could remove the last tab.
+  if (!isProtected(liveSurvivor) && survivorMeta.state === STATES.DEAD) {
+    return false;
+  }
+
+  if (Boolean(liveSurvivor.pinned) !== Boolean(plan.survivor.tab.pinned) ||
+      (liveSurvivor.groupId ?? TAB_GROUP_NONE) !== (plan.survivor.tab.groupId ?? TAB_GROUP_NONE) ||
+      Boolean(liveVictim.pinned) !== Boolean(plan.victim.tab.pinned) ||
+      (liveVictim.groupId ?? TAB_GROUP_NONE) !== (plan.victim.tab.groupId ?? TAB_GROUP_NONE)) {
+    return false;
+  }
+
+  return true;
+}
+
+async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
   if (!Number.isInteger(tab?.id) || closingTabIds.has(tab.id)) {
     return false;
   }
 
   closingTabIds.add(tab.id);
+  let operationId = null;
+  let removed = false;
+  let historyEntry = null;
   try {
-    const live = await chrome.tabs.get(tab.id);
-    const liveCanonical = Url.canonicalizeGofileUrl(live.url || '');
-    if (!liveCanonical || liveCanonical !== expectedCanonicalUrl || isProtected(live)) {
+    let live = await chrome.tabs.get(tab.id);
+    if (!isStableLiveTab(live, expectedCanonicalUrl)) {
       return false;
     }
 
-    const historyEntry = {
+    if (guard?.classification && !isCurrentDeadCandidate(guard.classification, live, true)) {
+      return false;
+    }
+    if (guard?.duplicate && !await validateDuplicatePlan(guard.duplicate, live)) {
+      return false;
+    }
+
+    // Re-fetch after validating the other side of a duplicate plan. The
+    // browser has no conditional remove primitive, so this is the last
+    // available non-atomic check before tabs.remove().
+    live = await chrome.tabs.get(tab.id);
+    if (!isStableLiveTab(live, expectedCanonicalUrl) ||
+        (guard?.classification && !isCurrentDeadCandidate(guard.classification, live, true)) ||
+        (guard?.duplicate && !await validateDuplicatePlan(guard.duplicate, live))) {
+      return false;
+    }
+
+    historyEntry = {
       url: live.url,
-      canonicalUrl: liveCanonical,
+      canonicalUrl: expectedCanonicalUrl,
       reason,
       closedAt: Date.now(),
       title: live.title || '',
       sourceTabId: live.id
     };
 
+    operationId = await prepareCloseOperation(historyEntry);
+    const phaseReady = operationId ? await setCloseOperationPhase(operationId, 'remove-issued') : false;
+    if (!operationId || !phaseReady) {
+      if (operationId) {
+        await cancelCloseOperation(operationId);
+      }
+      return false;
+    }
+
+    // Revalidate after the durable remove-intent write too. A duplicate's
+    // survivor may disappear while that write is awaiting storage.
+    live = await chrome.tabs.get(tab.id);
+    if (!isStableLiveTab(live, expectedCanonicalUrl) ||
+        (guard?.classification && !isCurrentDeadCandidate(guard.classification, live, true)) ||
+        (guard?.duplicate && !await validateDuplicatePlan(guard.duplicate, live))) {
+      await cancelCloseOperation(operationId);
+      return false;
+    }
+
     await chrome.tabs.remove(live.id);
-    tabMeta.delete(live.id);
-    await appendCloseHistory(historyEntry);
+    removed = true;
+    deleteTabMeta(live.id);
+    await setCloseOperationPhase(operationId, 'removed');
+
+    const savedEntry = { ...historyEntry, closeId: operationId };
+    await appendCloseHistory(savedEntry, operationId);
     await persistSessionMeta();
     return true;
   } catch {
+    if (removed && operationId && historyEntry) {
+      // tabs.remove succeeded but a later bookkeeping step failed. Keep the
+      // successful entry for retry; it must not be silently discarded.
+      queueUnsavedHistory({ ...historyEntry, closeId: operationId }, operationId);
+      await flushCloseHistory();
+      return true;
+    }
+    if (operationId) {
+      await cancelCloseOperation(operationId);
+    }
     return false;
   } finally {
     closingTabIds.delete(tab.id);
   }
 }
 
-async function handleDeadClassification(tabId, canonicalUrl) {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    if (Url.canonicalizeGofileUrl(tab.url || '') !== canonicalUrl || isProtected(tab)) {
-      return;
-    }
+function isCurrentDeadCandidate(candidate, live, allowCurrentClose = false) {
+  if (!candidate || !isStableLiveTab(live, candidate.canonicalUrl) ||
+      (!allowCurrentClose && closingTabIds.has(live.id))) {
+    return false;
+  }
 
-    await closeTabSafely(tab, CLOSE_REASONS.DEAD, canonicalUrl);
+  const current = tabMeta.get(live.id);
+  return current?.state === STATES.DEAD &&
+    current.canonicalUrl === candidate.canonicalUrl &&
+    current.navigationVersion === candidate.navigationVersion &&
+    current.classificationRevision === candidate.classificationRevision &&
+    current.routeGeneration === candidate.routeGeneration &&
+    (current.documentId || null) === (candidate.documentId || null);
+}
+
+async function handleDeadClassification(candidate) {
+  try {
+    const tab = await chrome.tabs.get(candidate.tabId);
+    if (!isCurrentDeadCandidate(candidate, tab)) {
+      return false;
+    }
+    return closeTabSafely(tab, CLOSE_REASONS.DEAD, candidate.canonicalUrl, { classification: candidate });
   } catch {
     // Tab disappeared or navigated while being checked.
+    return false;
   }
 }
 
-async function applyClassification(tab, message, reconcileAfter = true) {
-  if (!Number.isInteger(tab?.id) || !Url.isManagedGofileUrl(tab.url || '')) {
+async function applyClassification(tab, message, sender = null, reconcileAfter = true) {
+  if (!Number.isInteger(tab?.id)) {
+    return false;
+  }
+
+  const messageCanonical = Url.canonicalizeGofileUrl(message?.url || '');
+  if (!messageCanonical || messageCanonical !== message?.canonicalUrl) {
     return false;
   }
 
@@ -195,29 +540,73 @@ async function applyClassification(tab, message, reconcileAfter = true) {
   }
 
   const liveCanonical = Url.canonicalizeGofileUrl(live.url || '');
-  if (!liveCanonical || liveCanonical !== message?.canonicalUrl) {
+  if (!liveCanonical || liveCanonical !== messageCanonical || isTabNavigationInProgress(live)) {
+    return false;
+  }
+
+  const documentId = typeof sender?.documentId === 'string' ? sender.documentId : null;
+  const routeGeneration = Number.isInteger(message.documentGeneration) ? message.documentGeneration : 0;
+  const routeKey = routeGenerationKey(live.id, documentId);
+  if (routeGeneration < (latestRouteGenerations.get(routeKey) || 0)) {
     return false;
   }
 
   const previous = tabMeta.get(live.id);
+  if (previous?.documentId && documentId && previous.documentId !== documentId) {
+    return false;
+  }
+  if (previous?.navigationVersion && previous.canonicalUrl === liveCanonical &&
+      routeGeneration < (previous.routeGeneration || 0)) {
+    return false;
+  }
+
+  const observedAt = Number.isFinite(message.observedAt) ? message.observedAt : Date.now();
+  if (previous?.canonicalUrl === liveCanonical &&
+      routeGeneration === (previous.routeGeneration || 0) &&
+      Number.isFinite(previous.observedAt) && observedAt < previous.observedAt) {
+    return false;
+  }
+
   const state = sanitizeState(message.state);
-  tabMeta.set(live.id, {
+  if (live.status === 'loading' && state !== STATES.LOADING) {
+    return false;
+  }
+
+  const revision = nextClassificationRevision(live.id);
+  const navigationVersion = previous?.canonicalUrl === liveCanonical && Number.isInteger(previous.navigationVersion)
+    ? previous.navigationVersion
+    : nextNavigationVersion(live.id);
+  const next = {
     tabId: live.id,
     canonicalUrl: liveCanonical,
     state,
     firstSeenAt: previous?.canonicalUrl === liveCanonical && Number.isFinite(previous.firstSeenAt)
       ? previous.firstSeenAt
       : Date.now(),
-    observedAt: Number.isFinite(message.observedAt) ? message.observedAt : Date.now()
-  });
+    observedAt,
+    navigationVersion,
+    documentId: documentId || previous?.documentId || null,
+    routeGeneration,
+    classificationRevision: revision,
+    pendingNavigation: false
+  };
+  tabMeta.set(live.id, next);
+  rememberRouteGeneration(live.id, documentId || previous?.documentId || null, routeGeneration);
   await persistSessionMeta();
 
   if (state === STATES.DEAD) {
-    await handleDeadClassification(live.id, liveCanonical);
-  } else if (reconcileAfter) {
+    return await handleDeadClassification({
+      tabId: live.id,
+      canonicalUrl: liveCanonical,
+      navigationVersion,
+      classificationRevision: revision,
+      documentId: next.documentId,
+      routeGeneration
+    });
+  }
+  if (reconcileAfter) {
     await enqueueReconciliation();
   }
-
   return true;
 }
 
@@ -239,17 +628,22 @@ async function synchronizeClassifications(tabs) {
 
   for (const { tab, response } of responses) {
     if (response?.ok && response.state) {
-      await applyClassification(tab, response, false);
+      await applyClassification(tab, response, null, false);
     }
   }
 }
 
-function chooseDuplicateVictims(group) {
+function chooseDuplicateVictims(group, canonicalUrl) {
   const protectedTabs = group.filter(({ tab }) => isProtected(tab));
   const unprotectedTabs = group.filter(({ tab }) => !isProtected(tab));
 
   if (protectedTabs.length > 0) {
-    return unprotectedTabs;
+    const survivor = protectedTabs[0];
+    return unprotectedTabs.map((victim) => ({
+      victim,
+      survivor,
+      canonicalUrl
+    }));
   }
 
   if (unprotectedTabs.length <= 1) {
@@ -261,8 +655,8 @@ function chooseDuplicateVictims(group) {
     const bSeen = b.meta?.firstSeenAt ?? Number.MAX_SAFE_INTEGER;
     return aSeen - bSeen || a.tab.id - b.tab.id;
   });
-
-  return sorted.slice(1);
+  const survivor = sorted[0];
+  return sorted.slice(1).map((victim) => ({ victim, survivor, canonicalUrl }));
 }
 
 async function reconcileDuplicates() {
@@ -298,9 +692,13 @@ async function reconcileDuplicates() {
       continue;
     }
 
-    const victims = chooseDuplicateVictims(group);
-    for (const victim of victims) {
-      await closeTabSafely(victim.tab, CLOSE_REASONS.DUPLICATE, canonicalUrl);
+    for (const plan of chooseDuplicateVictims(group, canonicalUrl)) {
+      await closeTabSafely(
+        plan.victim.tab,
+        CLOSE_REASONS.DUPLICATE,
+        canonicalUrl,
+        { duplicate: plan }
+      );
     }
   }
 
@@ -344,26 +742,150 @@ function splitIntoMovableSegments(tabs) {
   return segments;
 }
 
-async function sortWindowOnce(windowId) {
+async function querySortedWindowTabs(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
-  tabs.sort((a, b) => a.index - b.index);
+  return [...tabs].sort((a, b) => a.index - b.index);
+}
 
+function sameSortSnapshot(a, b) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((tab, index) => {
+    const other = b[index];
+    return tab.id === other.id &&
+      tab.windowId === other.windowId &&
+      Boolean(tab.pinned) === Boolean(other.pinned) &&
+      (tab.groupId ?? TAB_GROUP_NONE) === (other.groupId ?? TAB_GROUP_NONE);
+  });
+}
+
+function sameTabSet(a, b) {
+  return a.length === b.length && new Set(a.map((tab) => tab.id)).size === new Set(b.map((tab) => tab.id)).size &&
+    a.every((tab) => b.some((other) => other.id === tab.id));
+}
+
+function sameProtectedStructure(a, b) {
+  const protectedShape = (tabs) => tabs
+    .map((tab, index) => ({ tab, index }))
+    .filter(({ tab }) => isProtected(tab))
+    .map(({ tab, index }) => `${index}:${tab.id}:${Boolean(tab.pinned)}:${tab.groupId ?? TAB_GROUP_NONE}:${tab.windowId}`);
+  return protectedShape(a).join('|') === protectedShape(b).join('|');
+}
+
+function segmentMatchesPlan(tabs, plan) {
+  const segment = tabs.slice(plan.startIndex, plan.startIndex + plan.segmentIds.length);
+  return segment.length === plan.segmentIds.length &&
+    segment.every((tab) => !isProtected(tab)) &&
+    segment.every((tab) => plan.segmentIds.includes(tab.id));
+}
+
+async function runSortWindow(windowId) {
   let changedSegments = 0;
-  for (const segment of splitIntoMovableSegments(tabs)) {
-    const desired = stablePartitionTabs(segment.tabs);
-    const currentIds = segment.tabs.map((tab) => tab.id);
-    const desiredIds = desired.map((tab) => tab.id);
-    const alreadyCorrect = currentIds.every((id, index) => id === desiredIds[index]);
+  const countedSegments = new Set();
+  let expectedSnapshot = null;
 
-    if (alreadyCorrect || desiredIds.length < 2) {
-      continue;
+  while (true) {
+    const tabs = await querySortedWindowTabs(windowId);
+    if (expectedSnapshot && !sameSortSnapshot(expectedSnapshot, tabs)) {
+      return { changed: changedSegments > 0, changedSegments, aborted: true };
     }
 
-    await chrome.tabs.move(desiredIds, { index: segment.startIndex });
-    changedSegments += 1;
+    const segment = splitIntoMovableSegments(tabs).find((candidate) => {
+      const desiredIds = stablePartitionTabs(candidate.tabs).map((tab) => tab.id);
+      return candidate.tabs.some((tab, index) => tab.id !== desiredIds[index]);
+    });
+
+    if (!segment) {
+      return { changed: changedSegments > 0, changedSegments, aborted: false };
+    }
+
+    const desiredIds = stablePartitionTabs(segment.tabs).map((tab) => tab.id);
+    const mismatchIndex = desiredIds.findIndex((id, index) => id !== segment.tabs[index].id);
+    const plan = {
+      startIndex: segment.startIndex,
+      segmentIds: segment.tabs.map((tab) => tab.id),
+      desiredIds
+    };
+    const planSegmentKey = plan.segmentIds.join(',');
+
+    const beforeMove = await querySortedWindowTabs(windowId);
+    if (!sameSortSnapshot(tabs, beforeMove) ||
+        !sameTabSet(tabs, beforeMove) ||
+        !sameProtectedStructure(tabs, beforeMove) ||
+        !segmentMatchesPlan(beforeMove, plan)) {
+      return { changed: changedSegments > 0, changedSegments, aborted: true };
+    }
+
+    const moveId = desiredIds[mismatchIndex];
+    const moveTab = beforeMove.find((tab) => tab.id === moveId);
+    if (!moveTab || isProtected(moveTab)) {
+      return { changed: changedSegments > 0, changedSegments, aborted: true };
+    }
+
+    // Move one tab to a current absolute index. Re-querying before every move
+    // follows Chromium's sequential index semantics and never relies on an
+    // array-replacement mock or a stale multi-tab plan.
+    await chrome.tabs.move([moveId], { index: plan.startIndex + mismatchIndex });
+    if (!countedSegments.has(planSegmentKey)) {
+      countedSegments.add(planSegmentKey);
+      changedSegments += 1;
+    }
+
+    const afterMove = await querySortedWindowTabs(windowId);
+    if (!sameTabSet(beforeMove, afterMove) || !sameProtectedStructure(beforeMove, afterMove)) {
+      return { changed: true, changedSegments, aborted: true };
+    }
+    expectedSnapshot = afterMove;
+  }
+}
+
+function sortWindowOnce(windowId) {
+  const previous = sortChains.get(windowId) || Promise.resolve();
+  const next = previous.catch(() => {}).then(() => runSortWindow(windowId));
+  const tracked = next.finally(() => {
+    if (sortChains.get(windowId) === tracked) {
+      sortChains.delete(windowId);
+    }
+  });
+  sortChains.set(windowId, tracked);
+  return next;
+}
+
+async function handleRouteChanged(tab, message, sender) {
+  if (!Number.isInteger(tab?.id) || typeof message?.url !== 'string') {
+    return false;
   }
 
-  return { changed: changedSegments > 0, changedSegments };
+  const canonicalUrl = Url.canonicalizeGofileUrl(message.url);
+  const declaredCanonical = message.canonicalUrl || null;
+  if (canonicalUrl !== declaredCanonical) {
+    return false;
+  }
+
+  const live = await chrome.tabs.get(tab.id);
+  const liveCanonical = Url.canonicalizeGofileUrl(live.url || '');
+  if (liveCanonical !== canonicalUrl) {
+    return false;
+  }
+
+  const documentId = typeof sender?.documentId === 'string' ? sender.documentId : null;
+  const generation = Number.isInteger(message.documentGeneration) ? message.documentGeneration : 0;
+  rememberRouteGeneration(tab.id, documentId, generation);
+
+  if (!canonicalUrl) {
+    deleteTabMeta(tab.id);
+    await persistSessionMeta();
+    return true;
+  }
+
+  const next = loadingMetaForTab(live, tabMeta.get(tab.id), canonicalUrl, isTabNavigationInProgress(live));
+  next.routeGeneration = generation;
+  next.documentId = documentId;
+  tabMeta.set(tab.id, next);
+  await persistSessionMeta();
+  await enqueueReconciliation();
+  return true;
 }
 
 async function getPopupState(windowId) {
@@ -372,13 +894,7 @@ async function getPopupState(windowId) {
     chrome.storage.local.get(STORAGE_KEYS.CLOSE_HISTORY)
   ]);
 
-  const counts = {
-    normal: 0,
-    other: 0,
-    attention: 0,
-    protected: 0
-  };
-
+  const counts = { normal: 0, other: 0, attention: 0, protected: 0 };
   for (const tab of tabs) {
     const canonicalUrl = Url.canonicalizeGofileUrl(tab.url || '');
     if (!canonicalUrl) {
@@ -410,11 +926,24 @@ async function getPopupState(windowId) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === MESSAGE_TYPES.TAB_ROUTE_CHANGED && Number.isInteger(sender?.tab?.id)) {
+    rememberRouteGeneration(
+      sender.tab.id,
+      typeof sender.documentId === 'string' ? sender.documentId : null,
+      Number.isInteger(message.documentGeneration) ? message.documentGeneration : 0
+    );
+  }
+
   (async () => {
     await ensureInitialized();
 
+    if (message?.type === MESSAGE_TYPES.TAB_ROUTE_CHANGED) {
+      sendResponse({ ok: await handleRouteChanged(sender.tab, message, sender) });
+      return;
+    }
+
     if (message?.type === MESSAGE_TYPES.TAB_CLASSIFICATION) {
-      const accepted = await applyClassification(sender.tab, message, true);
+      const accepted = await applyClassification(sender.tab, message, sender, true);
       sendResponse({ ok: accepted });
       return;
     }
@@ -467,28 +996,62 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   (async () => {
     await ensureInitialized();
 
-    const canonicalUrl = Url.canonicalizeGofileUrl(tab.url || '');
-    if (!canonicalUrl) {
-      if (tabMeta.delete(tabId)) {
+    const previous = tabMeta.get(tabId);
+    const pendingUrl = typeof changeInfo.pendingUrl === 'string' && changeInfo.pendingUrl.length > 0
+      ? changeInfo.pendingUrl
+      : (typeof tab.pendingUrl === 'string' && tab.pendingUrl.length > 0 ? tab.pendingUrl : '');
+    const pending = Boolean(pendingUrl);
+
+    // A pendingUrl is the last committed tab.url plus a future navigation.
+    // Invalidate the old classification immediately and do no close/reconcile
+    // until the committed URL arrives.
+    if (pending || (changeInfo.status === 'loading' && typeof changeInfo.url !== 'string')) {
+      clearRouteGenerations(tabId);
+      const currentCanonical = Url.canonicalizeGofileUrl(tab.url || '') || previous?.canonicalUrl || null;
+      const next = loadingMetaForTab(tab, previous, currentCanonical, true);
+      if (next) {
+        tabMeta.set(tabId, next);
         await persistSessionMeta();
       }
       return;
     }
 
-    const previous = tabMeta.get(tabId);
-    const urlChanged = typeof changeInfo.url === 'string' && previous?.canonicalUrl !== canonicalUrl;
-    tabMeta.set(tabId, metaForTab(tab, previous));
-
-    if (urlChanged) {
-      const next = tabMeta.get(tabId);
-      next.state = STATES.LOADING;
-      next.observedAt = 0;
-      next.firstSeenAt = Date.now();
+    const effectiveUrl = typeof changeInfo.url === 'string' ? changeInfo.url : (tab.url || '');
+    const canonicalUrl = Url.canonicalizeGofileUrl(effectiveUrl);
+    if (!canonicalUrl) {
+      if (!pending && tabMeta.has(tabId)) {
+        deleteTabMeta(tabId);
+        await persistSessionMeta();
+      }
+      return;
     }
 
+    const urlChanged = previous?.canonicalUrl !== canonicalUrl;
+    let next;
+    if (urlChanged || changeInfo.status === 'loading') {
+      clearRouteGenerations(tabId);
+      next = loadingMetaForTab(tab, urlChanged ? previous : previous, canonicalUrl, tab.status === 'loading');
+    } else {
+      next = metaForTab(tab, previous);
+      next.pendingNavigation = false;
+    }
+    tabMeta.set(tabId, next);
     await persistSessionMeta();
-    if (tabMeta.get(tabId)?.state === STATES.DEAD && !isProtected(tab)) {
-      await handleDeadClassification(tabId, canonicalUrl);
+
+    if (changeInfo.status === 'complete' && !isTabNavigationInProgress(tab)) {
+      await synchronizeClassifications([tab]);
+    }
+
+    const current = tabMeta.get(tabId);
+    if (current?.state === STATES.DEAD && !isProtected(tab)) {
+      await handleDeadClassification({
+        tabId,
+        canonicalUrl,
+        navigationVersion: current.navigationVersion,
+        classificationRevision: current.classificationRevision,
+        documentId: current.documentId,
+        routeGeneration: current.routeGeneration
+      });
     } else {
       await enqueueReconciliation();
     }
@@ -496,19 +1059,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabMeta.delete(tabId)) {
-    persistSessionMeta().catch(() => {});
-  }
+  deleteTabMeta(tabId);
+  persistSessionMeta().catch(() => {});
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   (async () => {
     await ensureInitialized();
-    tabMeta.delete(removedTabId);
+    const previous = tabMeta.get(removedTabId);
+    deleteTabMeta(removedTabId);
     try {
       const tab = await chrome.tabs.get(addedTabId);
-      const meta = metaForTab(tab, null);
-      if (meta) {
+      const canonicalUrl = Url.canonicalizeGofileUrl(tab.url || '');
+      if (canonicalUrl) {
+        const meta = loadingMetaForTab(tab, null, canonicalUrl, isTabNavigationInProgress(tab));
+        if (previous?.canonicalUrl === canonicalUrl && Number.isFinite(previous.firstSeenAt)) {
+          meta.firstSeenAt = previous.firstSeenAt;
+        }
         tabMeta.set(addedTabId, meta);
       }
     } catch {

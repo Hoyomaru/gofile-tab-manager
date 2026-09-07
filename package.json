@@ -1,0 +1,7 @@
+{
+  "name": "gofile-tab-manager",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/regression.test.js"
+  }
+}

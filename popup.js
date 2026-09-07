@@ -112,7 +112,9 @@
       if (!response?.ok) {
         throw new Error(response?.error || 'Sort failed');
       }
-      elements.status.textContent = response.changed
+      elements.status.textContent = response.aborted
+        ? 'タブ構成が変わったため、並び替えを中止しました。'
+        : response.changed
         ? '並び替えました。'
         : 'すでに安全な並びです。';
       await refresh();
