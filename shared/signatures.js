@@ -4,18 +4,6 @@
   const root = globalThis.GofileTabManager = globalThis.GofileTabManager || {};
 
   root.Signatures = Object.freeze({
-    DEAD_STRONG_TEXT: Object.freeze([
-      /\bcontent\s+does\s+not\s+exist\b/i,
-      /\bcontent\s+not\s+found\b/i,
-      /\bthis\s+content\s+(?:has\s+been\s+)?deleted\b/i,
-      /\bthis\s+content\s+(?:has\s+been\s+)?removed\b/i,
-      /\bthe\s+requested\s+content\s+(?:does\s+not\s+exist|was\s+not\s+found)\b/i
-    ]),
-    DEAD_ERROR_CONTAINER_TEXT: Object.freeze([
-      /^content\s+(?:does\s+not\s+exist|not\s+found)\.?$/i,
-      /^this\s+content\s+(?:has\s+been\s+)?(?:deleted|removed)\.?$/i,
-      /^the\s+requested\s+content\s+(?:does\s+not\s+exist|was\s+not\s+found)\.?$/i
-    ]),
     NON_DEAD_ATTENTION_TEXT: Object.freeze([
       /\bpassword\s+(?:is\s+)?required\b/i,
       /\benter\s+(?:the\s+)?password\b/i,
@@ -40,40 +28,27 @@
       /\btoo\s+many\s+requests\b/i,
       /\brate\s+limit(?:ed|ing)?\b/i
     ]),
-    // A semantic alert is the only DOM source accepted as a DEAD signal. Broad
-    // class/test-id selectors also match toasts, dialogs, and unrelated errors.
-    ERROR_CONTAINER_SELECTORS: Object.freeze(['[role="alert"]']),
-    NORMAL_TITLE_SELECTORS: Object.freeze([
-      'main h1',
-      'main h2',
-      '[data-testid*="title" i]',
-      '[class*="content-title" i]',
-      '[class*="contentTitle" i]'
-    ]),
+    // The current Gofile gate is rendered inside the page outlet. The root,
+    // exact not-found heading, and page title are required together; none of
+    // them alone is a DEAD signal.
+    ERROR_CONTAINER_SELECTORS: Object.freeze(['main[id="page"] [id="fm-root"]']),
+    DEAD_HEADING_SELECTORS: Object.freeze(['main[id="page"] [id="fm-root"] h1']),
+    DEAD_HEADING_TEXT: /^this\s+content\s+does\s+not\s+exist\.?$/i,
+    // core/meta.js appends " · Gofile" when it applies GATE_META.title.
+    DEAD_PAGE_TITLE: /^content\s+not\s+found(?:\s+·\s+gofile)?$/i,
     NORMAL_FILE_AREA_SELECTORS: Object.freeze([
-      '[class*="filemanager" i]',
-      '[class*="file-manager" i]',
-      '[data-testid*="file-manager" i]',
-      '[data-testid*="file-list" i]',
-      '[class*="file-list" i]',
-      '[class*="fileList" i]'
+      '[id="fm-header"]',
+      '[id="fm-list"]'
     ]),
-    NORMAL_CONTENT_SELECTORS: Object.freeze([
-      'main',
-      '[class*="content" i]',
-      '[data-testid*="content" i]'
+    NORMAL_FILE_VIEW_SELECTORS: Object.freeze([
+      'button[data-action="download"]',
+      'button[data-action="properties"]'
     ]),
     LOADING_SELECTORS: Object.freeze([
       '[aria-busy="true"]',
       '[role="progressbar"]',
       '[class*="loading" i]',
       '[class*="spinner" i]'
-    ]),
-    NORMAL_ACTION_TEXT: Object.freeze([
-      /\bdownload\b/i,
-      /\buploaded\b/i,
-      /\bfile(?:s)?\b/i,
-      /\bfolder(?:s)?\b/i
     ])
   });
 })();

@@ -182,7 +182,8 @@ function matchesSelector(node, selector) {
 
 class FakeDocument {
   constructor(url) {
-    this.title = 'Gofile';
+    this._title = 'Gofile';
+    this.titleNode = new DomNode(this, 'title');
     this.readyState = 'complete';
     this.listeners = new Map();
     this.mutationObservers = new Set();
@@ -191,6 +192,17 @@ class FakeDocument {
     this.body = new DomNode(this, 'body');
     this.documentElement.appendChild(this.body);
     this.locationHref = url;
+  }
+
+  get title() {
+    return this._title;
+  }
+
+  set title(value) {
+    this._title = String(value);
+    if (this.mutationObservers) {
+      this.notify({ type: 'characterData', target: this.titleNode, addedNodes: [] });
+    }
   }
 
   createElement(tagName) {
@@ -232,6 +244,8 @@ function makeContentContext(url, configure = () => {}, sendMessage = () => Promi
   const document = new FakeDocument(url);
   configure(document);
   const listeners = new Map();
+  const intervalCallbacks = new Map();
+  let nextIntervalId = 1;
   const location = {
     href: url,
     get origin() {
@@ -296,6 +310,14 @@ function makeContentContext(url, configure = () => {}, sendMessage = () => Promi
       return handle;
     },
     clearTimeout,
+    setInterval(callback) {
+      const id = nextIntervalId++;
+      intervalCallbacks.set(id, callback);
+      return id;
+    },
+    clearInterval(id) {
+      intervalCallbacks.delete(id);
+    },
     location,
     history,
     document,
@@ -324,6 +346,11 @@ function makeContentContext(url, configure = () => {}, sendMessage = () => Promi
         listener(event);
       }
     },
+    runRoutePoll() {
+      for (const callback of intervalCallbacks.values()) {
+        callback();
+      }
+    },
     requestClassification() {
       return new Promise((resolve) => {
         runtimeOnMessage.dispatch(
@@ -344,6 +371,55 @@ function contentOnly(url, configure) {
   });
   content.messages = messages;
   return content;
+}
+
+function appendGofilePage(document) {
+  const page = new DomNode(document, 'main', { id: 'page' });
+  const root = new DomNode(document, 'div', { id: 'fm-root' });
+  page.appendChild(root);
+  document.body.appendChild(page);
+  return { page, root };
+}
+
+function appendNotFoundGate(document, { parent = false, title = 'Content not found · Gofile' } = {}) {
+  document.title = title;
+  const { page, root } = appendGofilePage(document);
+  const gate = new DomNode(document, 'div', { class: 'mx-auto gate' });
+  gate.appendChild(new DomNode(document, 'h1', {}, 'This content does not exist'));
+  gate.appendChild(new DomNode(
+    document,
+    'div',
+    { class: 'text-slate-400' },
+    'The content you are looking for could not be found. It may have been removed after a period of inactivity, deleted by its owner, or the link may be incorrect.'
+  ));
+  if (parent) {
+    gate.appendChild(new DomNode(document, 'a', { href: '/d/Parent' }, 'Back to parent folder'));
+  }
+  root.appendChild(gate);
+  return { page, root, gate };
+}
+
+function appendNormalFolder(document, { name = 'Files', itemName = 'content not found.txt' } = {}) {
+  document.title = name;
+  const { page, root } = appendGofilePage(document);
+  const header = new DomNode(document, 'div', { id: 'fm-header' });
+  header.appendChild(new DomNode(document, 'h1', {}, name));
+  const list = new DomNode(document, 'div', { id: 'fm-list' });
+  list.appendChild(new DomNode(document, 'div', { class: 'fm-row' }, itemName));
+  root.appendChild(header);
+  root.appendChild(list);
+  return { page, root, header, list };
+}
+
+function appendNormalFile(document, { name = 'report.pdf' } = {}) {
+  document.title = name;
+  const { page, root } = appendGofilePage(document);
+  const file = new DomNode(document, 'section', { class: 'panel' });
+  file.appendChild(new DomNode(document, 'h1', {}, name));
+  file.appendChild(new DomNode(document, 'button', { 'data-action': 'download' }, 'Download'));
+  file.appendChild(new DomNode(document, 'button', { 'data-action': 'properties' }, 'Properties'));
+  root.appendChild(file);
+  return { page, root, file };
 }
 
 function createStorage(initial = {}) {
@@ -375,7 +451,8 @@ function createStorage(initial = {}) {
           failures[failureKey] -= 1;
           throw new Error(`${name}.set failed`);
         }
-        if (name === 'session' && blockedSessionSet) {
+        if (name === 'session' && blockedSessionSet &&
+            (!blockedSessionSet.key || Object.prototype.hasOwnProperty.call(values, blockedSessionSet.key))) {
           const gate = blockedSessionSet;
           blockedSessionSet = null;
           gate.reachedResolve();
@@ -391,12 +468,12 @@ function createStorage(initial = {}) {
     failures,
     local: area('local'),
     session: area('session'),
-    blockNextSessionSet() {
+    blockNextSessionSet(key = null) {
       let release;
       let reachedResolve;
       const reached = new Promise((resolve) => { reachedResolve = resolve; });
       const promise = new Promise((resolve) => { release = resolve; });
-      blockedSessionSet = { promise, reachedResolve };
+      blockedSessionSet = { key, promise, reachedResolve };
       return { reached, release };
     }
   };
@@ -655,15 +732,134 @@ test('manifest keeps host scope narrow while loading the whole Gofile origin', (
   assert.deepEqual(manifest.content_scripts[0].matches, ['https://gofile.io/*']);
 });
 
+test('the current Gofile not-found gate is DEAD without role=alert, with or without a parent link', async () => {
+  for (const title of ['Content not found', 'Content not found · Gofile']) {
+    for (const parent of [false, true]) {
+      const content = contentOnly(`https://gofile.io/d/CurrentGate${parent ? 'Parent' : 'Bare'}${title.includes('·') ? 'Suffix' : ''}`, (document) => {
+        appendNotFoundGate(document, { parent, title });
+      });
+      const response = await content.requestClassification();
+      assert.equal(response.state, 'DEAD', `${title}, parent link=${parent}`);
+    }
+  }
+});
+
+test('a newly confirmed not-found gate is classified without waiting for the debounce window', async () => {
+  const content = contentOnly('https://gofile.io/d/FastClassification');
+  content.document.title = 'Content not found · Gofile';
+  appendNotFoundGate(content.document, { title: 'Content not found · Gofile' });
+  await settle(10);
+
+  assert.ok(
+    content.messages.some((message) => message.type === 'TAB_CLASSIFICATION' && message.state === 'DEAD'),
+    'fresh DEAD classification should be sent immediately after the gate mutation'
+  );
+});
+
+test('the not-found gate is distinct from normal folder and file content', async () => {
+  const folder = contentOnly('https://gofile.io/d/NormalFolder', (document) => {
+    appendNormalFolder(document);
+  });
+  assert.equal((await folder.requestClassification()).state, 'NORMAL');
+
+  const file = contentOnly('https://gofile.io/d/NormalFile', (document) => {
+    appendNormalFile(document);
+  });
+  assert.equal((await file.requestClassification()).state, 'NORMAL');
+
+  for (const [title, heading] of [
+    ['Protected content', 'This content is password protected'],
+    ['Content expired', 'This content has expired']
+  ]) {
+    const content = contentOnly(`https://gofile.io/d/Gate${heading.replace(/\W+/g, '')}`, (document) => {
+      document.title = title;
+      const { root } = appendGofilePage(document);
+      root.appendChild(new DomNode(document, 'h1', {}, heading));
+    });
+    assert.notEqual((await content.requestClassification()).state, 'DEAD', title);
+  }
+});
+
+test('a page-world SPA route change survives unrelated mutations until the new not-found gate appears', async () => {
+  const urlA = 'https://gofile.io/d/StageA';
+  const urlB = 'https://gofile.io/d/StageB';
+  let oldDom;
+  const content = contentOnly(urlA, (document) => {
+    oldDom = appendNotFoundGate(document);
+  });
+
+  content.location.href = urlB;
+  content.runRoutePoll();
+  await settle(10);
+  assert.ok(content.messages.some((message) => message.type === 'TAB_ROUTE_CHANGED'));
+
+  const loading = new DomNode(content.document, 'div', { class: 'spinner' }, 'Loading');
+  content.document.body.appendChild(loading);
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD', 'old gate must not carry over');
+  content.document.body.removeChild(loading);
+  await settle(10);
+
+  oldDom.page.removeChild(oldDom.root);
+  await settle(10);
+  const newRoot = new DomNode(content.document, 'div', { id: 'fm-root' });
+  const newGate = new DomNode(content.document, 'div', { class: 'gate' });
+  newGate.appendChild(new DomNode(content.document, 'h1', {}, 'This content does not exist'));
+  newGate.appendChild(new DomNode(content.document, 'p', {}, 'The content you are looking for could not be found.'));
+  newRoot.appendChild(newGate);
+  oldDom.page.appendChild(newRoot);
+  await settle(10);
+
+  assert.equal((await content.requestClassification()).state, 'DEAD');
+});
+
+test('same-content query/hash navigation keeps the established DOM classification', async () => {
+  const url = 'https://gofile.io/d/SameContent';
+  const content = contentOnly(url, (document) => appendNotFoundGate(document));
+  assert.equal((await content.requestClassification()).state, 'DEAD');
+
+  content.location.href = `${url}?page=1#details`;
+  content.runRoutePoll();
+  await settle(10);
+  assert.equal((await content.requestClassification()).state, 'DEAD');
+
+  content.location.href = 'https://gofile.io/d/SameContent?page=2';
+  content.dispatchWindowEvent('popstate');
+  await settle(10);
+  assert.equal((await content.requestClassification()).state, 'DEAD');
+  content.dispatchWindowEvent('pageshow');
+});
+
+test('the confirmed not-found gate reaches removal and history, but never removes protected tabs', async () => {
+  const url = 'https://gofile.io/d/ConnectedGate';
+  const storage = createStorage();
+  const state = await createBackground([tab(1, url)], storage);
+  makeContentContext(url, (document) => appendNotFoundGate(document), (message) =>
+    state.browser.dispatchTabMessage(1, message, 'gate-document')
+  );
+  await settle(50);
+  assert.equal(state.browser.snapshot(1), null);
+  assert.equal(history(storage).length, 1);
+  assert.equal(history(storage)[0].reason, 'DEAD');
+
+  for (const options of [{ pinned: true }, { groupId: 9 }]) {
+    const protectedStorage = createStorage();
+    const protectedState = await createBackground([tab(1, url, options)], protectedStorage);
+    makeContentContext(url, (document) => appendNotFoundGate(document), (message) =>
+      protectedState.browser.dispatchTabMessage(1, message, 'protected-gate-document')
+    );
+    await settle(50);
+    assert.ok(protectedState.browser.snapshot(1), JSON.stringify(options));
+    assert.equal(history(protectedStorage).length, 0, JSON.stringify(options));
+  }
+});
+
 test('content classification requires a positive visible dedicated signal', async () => {
   const cases = [
     {
       name: 'filename is not a dead signal',
       configure(document) {
-        const main = new DomNode(document, 'main');
-        main.appendChild(new DomNode(document, 'h1', {}, 'Files'));
-        main.appendChild(new DomNode(document, 'div', { class: 'file-list' }, 'file not found.txt'));
-        document.body.appendChild(main);
+        appendNormalFolder(document, { itemName: 'file not found.txt' });
       },
       expected: 'NORMAL'
     },
@@ -685,10 +881,7 @@ test('content classification requires a positive visible dedicated signal', asyn
     {
       name: 'normal content wins over coexisting alert text',
       configure(document) {
-        const main = new DomNode(document, 'main');
-        main.appendChild(new DomNode(document, 'h1', {}, 'Files'));
-        main.appendChild(new DomNode(document, 'div', { class: 'file-list' }, 'file.txt'));
-        document.body.appendChild(main);
+        appendNormalFolder(document, { itemName: 'file.txt' });
         document.body.appendChild(new DomNode(document, 'div', { role: 'alert' }, 'content not found'));
       },
       expected: 'NORMAL'
@@ -710,7 +903,7 @@ test('content classification requires a positive visible dedicated signal', asyn
     {
       name: 'visible content absence alert is accepted',
       configure(document) {
-        document.body.appendChild(new DomNode(document, 'div', { role: 'alert' }, 'Content does not exist'));
+        appendNotFoundGate(document);
       },
       expected: 'DEAD'
     }
@@ -782,6 +975,36 @@ test('pending navigation blocks old DEAD classification and unmanaged commit cle
   state.browser.emitUpdated(1, { url: 'https://gofile.io/', status: 'complete' });
   await settle();
   assert.equal(state.browser.snapshot(1).url, 'https://gofile.io/');
+});
+
+test('DEAD removal starts before the pending close-history write completes', async () => {
+  const url = 'https://gofile.io/d/FastClose';
+  const storage = createStorage();
+  const state = await createBackground([tab(1, url)], storage);
+  const gate = storage.blockNextSessionSet('pendingCloses');
+  const close = state.browser.dispatchTabMessage(1, classification(url, 'DEAD', 20));
+
+  await gate.reached;
+  await settle(5);
+  assert.equal(state.browser.snapshot(1), null, 'tabs.remove must not wait for history intent storage');
+
+  gate.release();
+  await close;
+  assert.equal(history(storage).length, 1, 'successful removal still reaches Close History');
+});
+
+test('DEAD removal starts before tab metadata persistence completes', async () => {
+  const url = 'https://gofile.io/d/FastMetadata';
+  const storage = createStorage();
+  const state = await createBackground([tab(1, url)], storage);
+  const gate = storage.blockNextSessionSet('tabMeta');
+  const close = state.browser.dispatchTabMessage(1, classification(url, 'DEAD', 20));
+  await gate.reached;
+  await settle(5);
+  assert.equal(state.browser.snapshot(1), null, 'tabs.remove must not wait for tab metadata persistence');
+  gate.release();
+  assert.equal((await close)?.ok, true);
+  assert.equal(history(storage).length, 1, 'successful removal still reaches Close History');
 });
 
 test('a newer NORMAL classification invalidates an older waiting DEAD close', async () => {

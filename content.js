@@ -13,9 +13,10 @@
   let routeGeneration = 0;
   let lastObservedHref = location.href;
   let routeStartedAt = Date.now();
-  let routeNeedsFreshDom = false;
+  let routeAwaitingRender = false;
   let freshDeadSignalGeneration = -1;
   let debounceHandle = null;
+  let routePollHandle = null;
   let lastSentKey = '';
   let observer = null;
 
@@ -82,6 +83,10 @@
     return selectors.some((selector) => querySelectorAllSafe(selector).some(isVisible));
   }
 
+  function allVisibleSelectorsExist(selectors) {
+    return selectors.every((selector) => querySelectorAllSafe(selector).some(isVisible));
+  }
+
   function matchesSelectorSafe(node, selector) {
     try {
       return node?.matches?.(selector) || false;
@@ -90,73 +95,147 @@
     }
   }
 
-  function containsErrorContainer(node) {
-    const selector = Signatures.ERROR_CONTAINER_SELECTORS[0];
-    for (let current = node; current; current = current.parentElement) {
-      if (matchesSelectorSafe(current, selector)) {
+  function isDescendantOf(node, ancestor) {
+    for (let current = node; current; current = current.parentElement || current.parentNode) {
+      if (current === ancestor) {
         return true;
       }
     }
+    return false;
+  }
 
-    try {
-      return Boolean(node?.querySelector?.(selector));
-    } catch {
+  function isInsidePageRoot(node) {
+    let root = null;
+    for (let current = node; current; current = current.parentElement || current.parentNode) {
+      if (matchesSelectorSafe(current, '[id="fm-root"]')) {
+        root = current;
+        break;
+      }
+    }
+    if (!root) {
       return false;
     }
+
+    for (let current = root; current; current = current.parentElement || current.parentNode) {
+      if (matchesSelectorSafe(current, 'main[id="page"]')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function hasVisibleDeadHeading(root) {
+    return Signatures.DEAD_HEADING_SELECTORS.some((selector) => {
+      let headings = [];
+      try {
+        headings = [...document.querySelectorAll(selector)];
+      } catch {
+        headings = [];
+      }
+      return headings.some((heading) =>
+        isDescendantOf(heading, root) &&
+        isVisible(heading) &&
+        Signatures.DEAD_HEADING_TEXT.test(normalizedText(heading))
+      );
+    });
+  }
+
+  function isDeadHeadingNode(node) {
+    for (let current = node; current; current = current.parentElement || current.parentNode) {
+      if (matchesSelectorSafe(current, 'h1') && isInsidePageRoot(current) && isVisible(current)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isTitleNode(node) {
+    for (let current = node; current; current = current.parentElement || current.parentNode) {
+      if (matchesSelectorSafe(current, 'title')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function hasDeadErrorContainerSignal() {
-    for (const selector of Signatures.ERROR_CONTAINER_SELECTORS) {
-      for (const node of querySelectorAllSafe(selector)) {
-        if (!isVisible(node)) {
-          continue;
-        }
-
-        const text = normalizedText(node);
-        const exactDeadText = Signatures.DEAD_ERROR_CONTAINER_TEXT.some((pattern) => pattern.test(text));
-        const explicitDeadText = text.length <= 180 && anyPatternMatches(Signatures.DEAD_STRONG_TEXT, text);
-        if (exactDeadText || explicitDeadText) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  function hasMeaningfulTitle() {
-    const documentTitle = (document.title || '').trim();
-    if (documentTitle && !/^gofile(?:\s*[-|].*)?$/i.test(documentTitle)) {
-      return true;
+    const pageTitle = (document.title || '').replace(/\s+/g, ' ').trim();
+    if (!Signatures.DEAD_PAGE_TITLE.test(pageTitle)) {
+      return false;
     }
 
-    for (const selector of Signatures.NORMAL_TITLE_SELECTORS) {
-      const node = querySelectorAllSafe(selector).find(isVisible);
-      if (normalizedText(node).length >= 2) {
-        return true;
-      }
-    }
-    return false;
+    return Signatures.ERROR_CONTAINER_SELECTORS.some((selector) =>
+      querySelectorAllSafe(selector).some((root) =>
+        isVisible(root) && hasVisibleDeadHeading(root)
+      )
+    );
   }
 
   function mutationTouchesDeadSignal(record) {
-    if (containsErrorContainer(record.target)) {
+    const addedNodes = [...(record.addedNodes || [])];
+    const addedDeadStructure = addedNodes.some((node) => {
+      const roots = [];
+      if (matchesSelectorSafe(node, '[id="fm-root"]')) {
+        roots.push(node);
+      }
+      try {
+        roots.push(...node.querySelectorAll?.('[id="fm-root"]') || []);
+      } catch {
+        // An unusual DOM node may not implement querySelectorAll.
+      }
+      if (roots.some((root) => isInsidePageRoot(root) && hasVisibleDeadHeading(root))) {
+        return true;
+      }
+
+      const headings = [];
+      if (matchesSelectorSafe(node, 'h1')) {
+        headings.push(node);
+      }
+      try {
+        headings.push(...node.querySelectorAll?.('h1') || []);
+      } catch {
+        // An unusual DOM node may not implement querySelectorAll.
+      }
+      return headings.some((heading) =>
+        isInsidePageRoot(heading) &&
+        isVisible(heading) &&
+        Signatures.DEAD_HEADING_TEXT.test(normalizedText(heading)) &&
+        hasDeadErrorContainerSignal()
+      );
+    });
+    if (addedDeadStructure && hasDeadErrorContainerSignal()) {
       return true;
     }
 
-    for (const node of record.addedNodes || []) {
-      if (containsErrorContainer(node)) {
-        return true;
-      }
+    // Text/visibility changes to the exact gate heading or page title can
+    // complete a staged render. A mutation on body or an existing gate's
+    // arbitrary child is not fresh evidence for the current route.
+    if ((isDeadHeadingNode(record.target) || isTitleNode(record.target)) &&
+        hasDeadErrorContainerSignal()) {
+      return true;
     }
     return false;
   }
 
   function observeMutations(records) {
-    if (routeNeedsFreshDom && records.some(mutationTouchesDeadSignal)) {
+    if (records.length > 0) {
+      routeAwaitingRender = false;
+    }
+    const freshDeadMutation = records.some(mutationTouchesDeadSignal);
+    if (freshDeadMutation) {
       freshDeadSignalGeneration = routeGeneration;
     }
-    if (routeNeedsFreshDom && records.length > 0) {
-      routeNeedsFreshDom = false;
+
+    // Once the complete, current-route gate is present, do not wait for the
+    // normal 800ms debounce. classifyDocument() still applies loading,
+    // attention, normal-content, and route-generation safety checks.
+    if (freshDeadSignalGeneration === routeGeneration &&
+        hasDeadErrorContainerSignal() &&
+        classifyDocument() === STATES.DEAD) {
+      clearTimeout(debounceHandle);
+      debounceHandle = null;
+      sendClassification();
+      return;
     }
     scheduleClassification();
   }
@@ -177,7 +256,7 @@
 
     // A route change invalidates all old DOM evidence until a new render has
     // happened. This is deliberately not a timer-based readiness check.
-    if (routeNeedsFreshDom) {
+    if (routeAwaitingRender) {
       return STATES.LOADING;
     }
 
@@ -195,13 +274,11 @@
     }
 
     const normalSignals = [
-      hasMeaningfulTitle(),
-      anyVisibleSelectorExists(Signatures.NORMAL_FILE_AREA_SELECTORS),
-      anyVisibleSelectorExists(Signatures.NORMAL_CONTENT_SELECTORS) &&
-        anyPatternMatches(Signatures.NORMAL_ACTION_TEXT, bodyText)
+      allVisibleSelectorsExist(Signatures.NORMAL_FILE_AREA_SELECTORS),
+      allVisibleSelectorsExist(Signatures.NORMAL_FILE_VIEW_SELECTORS)
     ].filter(Boolean).length;
 
-    if (normalSignals >= 2) {
+    if (normalSignals >= 1) {
       return STATES.NORMAL;
     }
 
@@ -221,6 +298,11 @@
   }
 
   function sendClassification() {
+    if (location.href !== lastObservedHref) {
+      invalidateRouteIfChanged();
+      return;
+    }
+
     const parsed = Url.parseManagedUrl(location.href);
     if (!parsed) {
       return;
@@ -278,11 +360,21 @@
       observeMutations(pendingMutations);
     }
 
+    const previousHref = lastObservedHref;
+    const previousGeneration = routeGeneration;
+    const previousCanonical = Url.canonicalizeGofileUrl(previousHref);
+    const nextCanonical = Url.canonicalizeGofileUrl(location.href);
+    const sameCanonical = Boolean(previousCanonical && nextCanonical && previousCanonical === nextCanonical);
+    const hadFreshDeadSignal = freshDeadSignalGeneration === previousGeneration ||
+      (previousGeneration === 0 && hasDeadErrorContainerSignal());
+
     lastObservedHref = location.href;
     routeGeneration += 1;
     routeStartedAt = Date.now();
-    routeNeedsFreshDom = true;
-    freshDeadSignalGeneration = -1;
+    routeAwaitingRender = !sameCanonical;
+    freshDeadSignalGeneration = sameCanonical && hadFreshDeadSignal
+      ? routeGeneration
+      : -1;
     lastSentKey = '';
     clearTimeout(debounceHandle);
     debounceHandle = null;
@@ -341,6 +433,8 @@
     observer = null;
     clearTimeout(debounceHandle);
     debounceHandle = null;
+    clearInterval(routePollHandle);
+    routePollHandle = null;
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -348,6 +442,7 @@
       return false;
     }
 
+    invalidateRouteIfChanged();
     const parsed = Url.parseManagedUrl(location.href);
     if (!parsed) {
       sendResponse({ ok: false });
@@ -370,6 +465,7 @@
   }
 
   startObserver();
+  routePollHandle = setInterval(invalidateRouteIfChanged, 250);
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scheduleClassification, { once: true });
   } else if (isManagedRoute()) {

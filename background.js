@@ -262,20 +262,6 @@ async function recoverPendingCloseOperations(tabs) {
   await flushCloseHistory();
 }
 
-async function prepareCloseOperation(entry) {
-  const operationId = `${entry.sourceTabId}:${entry.closedAt}:${++closeSequence}`;
-  pendingCloseOperations.set(operationId, {
-    tabId: entry.sourceTabId,
-    phase: 'pending',
-    entry: { ...entry, closeId: operationId }
-  });
-  if (!await persistPendingCloseOperations()) {
-    pendingCloseOperations.delete(operationId);
-    return null;
-  }
-  return operationId;
-}
-
 async function setCloseOperationPhase(operationId, phase) {
   const operation = pendingCloseOperations.get(operationId);
   if (!operation) {
@@ -288,6 +274,16 @@ async function setCloseOperationPhase(operationId, phase) {
 async function cancelCloseOperation(operationId) {
   pendingCloseOperations.delete(operationId);
   await persistPendingCloseOperations();
+}
+
+function startCloseOperation(entry) {
+  const operationId = `${entry.sourceTabId}:${entry.closedAt}:${++closeSequence}`;
+  pendingCloseOperations.set(operationId, {
+    tabId: entry.sourceTabId,
+    phase: 'remove-issued',
+    entry: { ...entry, closeId: operationId }
+  });
+  return operationId;
 }
 
 async function initializeFromLiveTabs() {
@@ -417,6 +413,7 @@ async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
   let operationId = null;
   let removed = false;
   let historyEntry = null;
+  let intentPersistence = null;
   try {
     let live = await chrome.tabs.get(tab.id);
     if (!isStableLiveTab(live, expectedCanonicalUrl)) {
@@ -449,28 +446,19 @@ async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
       sourceTabId: live.id
     };
 
-    operationId = await prepareCloseOperation(historyEntry);
-    const phaseReady = operationId ? await setCloseOperationPhase(operationId, 'remove-issued') : false;
-    if (!operationId || !phaseReady) {
-      if (operationId) {
-        await cancelCloseOperation(operationId);
-      }
-      return false;
-    }
-
-    // Revalidate after the durable remove-intent write too. A duplicate's
-    // survivor may disappear while that write is awaiting storage.
-    live = await chrome.tabs.get(tab.id);
-    if (!isStableLiveTab(live, expectedCanonicalUrl) ||
-        (guard?.classification && !isCurrentDeadCandidate(guard.classification, live, true)) ||
-        (guard?.duplicate && !await validateDuplicatePlan(guard.duplicate, live))) {
-      await cancelCloseOperation(operationId);
-      return false;
-    }
-
+    // Start persisting the remove intent, but do not make the visible tab
+    // wait for storage. The final live-tab/guard validation above is the last
+    // check before the non-atomic tabs.remove call.
+    operationId = startCloseOperation(historyEntry);
+    intentPersistence = persistPendingCloseOperations();
     await chrome.tabs.remove(live.id);
     removed = true;
     deleteTabMeta(live.id);
+
+    // The tab is already closed. Finish the durable bookkeeping afterwards;
+    // this preserves restart recovery and retryable history without delaying
+    // the user-visible close operation.
+    await intentPersistence;
     await setCloseOperationPhase(operationId, 'removed');
 
     const savedEntry = { ...historyEntry, closeId: operationId };
@@ -484,6 +472,9 @@ async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
       queueUnsavedHistory({ ...historyEntry, closeId: operationId }, operationId);
       await flushCloseHistory();
       return true;
+    }
+    if (intentPersistence) {
+      await intentPersistence;
     }
     if (operationId) {
       await cancelCloseOperation(operationId);
@@ -592,10 +583,13 @@ async function applyClassification(tab, message, sender = null, reconcileAfter =
   };
   tabMeta.set(live.id, next);
   rememberRouteGeneration(live.id, documentId || previous?.documentId || null, routeGeneration);
-  await persistSessionMeta();
+  // A confirmed DEAD result must reach the final live-tab checks without
+  // waiting for session storage. The write is still awaited before the
+  // message completes, but it must not delay tabs.remove().
+  const sessionPersistence = persistSessionMeta();
 
   if (state === STATES.DEAD) {
-    return await handleDeadClassification({
+    const removed = await handleDeadClassification({
       tabId: live.id,
       canonicalUrl: liveCanonical,
       navigationVersion,
@@ -603,7 +597,10 @@ async function applyClassification(tab, message, sender = null, reconcileAfter =
       documentId: next.documentId,
       routeGeneration
     });
+    await sessionPersistence;
+    return removed;
   }
+  await sessionPersistence;
   if (reconcileAfter) {
     await enqueueReconciliation();
   }
