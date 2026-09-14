@@ -2,9 +2,9 @@
 
 このファイルは、Git の commit 履歴、`manifest.json`、`shared/constants.js`、既存テスト記録から確認できる変更だけを記載します。
 
-**Gofile Tab Manager v1.0.0 は 2026-09-14 を初回正式リリース日とします。**
+**Gofile Tab Manager v1.0.0 は 2026-09-14 に初回正式リリースされました。**
 
-Version `1.0.0` の実装自体は 2026-09-07 にリポジトリへ追加され、その後 2026-09-07 と 2026-09-10 に安全性・競合対策・Gofile 現行 DOM への適合修正が行われました。これらはすべて、2026-09-14 に正式公開する **v1.0.0 の構成要素**です。
+Version `1.0.0` の実装自体は 2026-09-07 にリポジトリへ追加され、その後 2026-09-07 と 2026-09-10 に安全性・競合対策・Gofile 現行 DOM への適合修正が行われました。これらはすべて、2026-09-14 に正式公開された **v1.0.0 の構成要素**です。
 
 `manifest.json` と `shared/constants.js` の Version は `1.0.0` で一致しています。
 
@@ -15,6 +15,11 @@ Version `1.0.0` の実装自体は 2026-09-07 にリポジトリへ追加され�
 ## [1.0.0] - 2026-09-14
 
 Gofile Tab Manager の初回正式リリースです。
+
+GitHub Release:
+
+- Tag: `v1.0.0`
+- Title: `Gofile Tab Manager v1.0.0`
 
 Chrome / Microsoft Edge（Chromium）向け Manifest V3 拡張として、Gofile の `https://gofile.io/d/<contentId>` タブを安全側に整理する機能を提供します。
 
@@ -71,7 +76,7 @@ Commit:
 
 ### Documentation
 
-2026-09-14 の正式リリース準備として、リポジトリを v1.0.0 の Single Source of Truth として利用できるようドキュメントを整備しました。
+2026-09-14 の正式リリースに合わせ、リポジトリを v1.0.0 の Single Source of Truth として利用できるようドキュメントを整備しました。
 
 - README を利用者向け主要ドキュメントとして拡充。
 - `DEVELOPMENT.md` を追加し、内部実装、安全上の不変条件、既知問題、デバッグ、リリース手順を整理。
