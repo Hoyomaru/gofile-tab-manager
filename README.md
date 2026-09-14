@@ -1,88 +1,311 @@
-# Gofile Tab Manager v1.0.0
+# Gofile Tab Manager
 
-Chrome / Microsoft Edge（Chromium）向けのManifest V3拡張です。Gofileの `https://gofile.io/d/<contentId>` 形式のコンテンツタブだけを対象に、次の3つを提供します。
+Gofile Tab Manager は、Chrome / Microsoft Edge（Chromium）向けの **Manifest V3 ブラウザ拡張**です。
 
-1. 明確にDEADと判断できるタブの自動削除
-2. 同一コンテンツの重複タブの自動削除
-3. ユーザーがPopupの「並び替え」を押した時だけ行う、現在ウィンドウの整理
+Gofile の `https://gofile.io/d/<contentId>` 形式のコンテンツタブだけを対象に、明確に不存在と確認できたタブの自動クローズ、同一コンテンツの重複タブ整理、現在ウィンドウの手動並び替えを行います。
 
-429の再試行や自動リロードを行う拡張ではありません。
+> [!IMPORTANT]
+> Gofile の公式機能・公式拡張ではありません。Gofile とは無関係の非公式ツールです。
 
-## DEAD自動削除
+現在のバージョンは **1.0.0** です。`manifest.json` と `shared/constants.js` の Version は一致しています。
 
-全ブラウザウィンドウの対象Gofileタブを監視します。`content does not exist`、`content not found` など、コンテンツ不存在を示す肯定的シグナルを検出した場合だけDEADとして扱います。
+## このツールが解決する問題
 
-password / private / access denied / 401 / 403 / 429 / 5xx / network error / timeout / 読み込み途中 / 判定不能などはDEADにしません。判定不能はATTENTIONとして安全側に倒します。
+多数の Gofile コンテンツをタブで開いていると、削除済みコンテンツ、同じコンテンツの重複、確認が必要なタブが混在しやすくなります。本拡張は、誤削除を避けることを優先しながら次の整理を行います。
 
-pinnedタブ、またはtab group所属タブはPROTECTEDとして扱い、DEADであっても自動削除しません。
+- 明確に `DEAD` と確認できた Gofile タブを自動で閉じる
+- 同一 canonical URL の重複タブを自動で整理する
+- pinned / tab group 所属タブを `PROTECTED` として保護する
+- Popup の操作時だけ、現在ウィンドウのタブを安全に並び替える
+- 自動で閉じたタブを直近 50 件まで保存し、Popup から再オープンできるようにする
 
-## 重複自動削除
+**429 の再試行、自動リロード、Gofile API への独自リクエスト、ダウンロード管理を行う拡張ではありません。**
 
-queryとfragmentを除去し、末尾 `/` を除去したcanonical URLで同一コンテンツを判定します。contentIdの大文字小文字は維持します。
+## 主な安全方針
 
-同一canonical URLが複数ある場合は原則として最も古い1件を残します。PROTECTEDが含まれる場合はPROTECTEDを優先して残し、非PROTECTEDだけを削除します。PROTECTED同士だけの重複は削除しません。
+本拡張は「不明なら閉じない」を基本方針にしています。
 
-## 手動並び替え
+- password / private / access denied / 401 / 403 / 5xx / network error / timeout は `DEAD` にしません
+- 429 / Too Many Requests / rate limit は `RATE_LIMITED` として扱い、閉じません
+- 読み込み中や判定途中は `LOADING` とし、閉じません
+- 判定不能は最終的に `ATTENTION` とし、閉じません
+- pinned タブと tab group 所属タブは `PROTECTED` とし、自動クローズ・重複削除・move の対象にしません
+- 削除直前に実タブの URL・navigation 状態・保護状態・分類世代を再確認します
+- stale な `DEAD` 判定や古い SPA DOM を根拠に削除しないよう、navigation / document generation を追跡します
 
-Popupの「並び替え」を1回押した時だけ、Popupを開いた現在のウィンドウを1回整理します。自動並び替えは行いません。
+## 動作環境
 
-順序は次のstable partitionです。
+| 項目 | 状態 |
+|---|---|
+| ブラウザ | Chrome / Microsoft Edge（Chromium）を想定 |
+| 拡張方式 | Manifest V3 |
+| 対象サイト | `https://gofile.io/*` |
+| 管理対象 URL | `https://gofile.io/d/<contentId>` |
+| 必要権限 | `tabs`, `storage` |
+| Host permission | `https://gofile.io/*` のみ |
+| ビルド | 不要 |
+| npm 依存パッケージ | なし |
+| テスト用ランタイム | Node.js（リポジトリ記録では v24.19.0） |
+| 実ブラウザの確認済みバージョン | **未確認** |
 
-1. 非Gofile
-2. NORMAL Gofile
-3. その他Gofile（RATE_LIMITED / LOADING / ATTENTIONなど）
+ブラウザの最小対応バージョンは明示されていません。Manifest V3、`chrome.storage.session`、tab group 関連の Tabs API を利用できる Chromium 系ブラウザが必要です。
 
-各グループ内部の相対順序は維持します。PROTECTEDはmoveせず、PROTECTEDを固定バリアとして、その間にある非PROTECTEDタブだけを安全に整理します。
+## インストール
 
-## PROTECTED
+### Chrome
 
-次はPROTECTEDです。
+1. このリポジトリを ZIP で取得するか clone します。
+2. ZIP の場合は任意の場所へ展開します。
+3. `chrome://extensions/` を開きます。
+4. **デベロッパーモード**を ON にします。
+5. **パッケージ化されていない拡張機能を読み込む**を押します。
+6. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
 
-- pinnedタブ
-- tab group所属タブ
+### Microsoft Edge
 
-PROTECTEDに対して、自動削除・重複削除・並び替えによるmoveは行いません。
+1. このリポジトリを ZIP で取得するか clone します。
+2. ZIP の場合は任意の場所へ展開します。
+3. `edge://extensions/` を開きます。
+4. **開発者モード**を ON にします。
+5. **展開して読み込み**を押します。
+6. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
 
-## Close History
+ビルドや `npm install` は不要です。ブラウザがリポジトリ内の JavaScript / HTML / CSS を直接読み込みます。
 
-自動削除したDEAD / DUPLICATEタブは `chrome.storage.local` に直近50件保存します。
+## 更新
 
-Popupの `Recent auto-closed` から「再オープン」を押すと、保存済みURLを新しいタブとして開きます。過去のtab IDは再利用しません。
+1. 最新ソースを同じ展開先へ上書きするか、Git 利用時は最新 `main` を取得します。
+2. 拡張機能管理画面を開きます。
+3. Gofile Tab Manager の **再読み込み**を実行します。
+4. 必要に応じて Gofile の既存タブを再読み込みします。
 
-## Chromeへのインストール
+`chrome.storage.local` / `chrome.storage.session` の引き継ぎは拡張 ID に依存します。**展開先フォルダを変更した場合のデータ引き継ぎは未確認**のため、更新時は同じ展開先を維持することを推奨します。
 
-1. `chrome://extensions/` を開く
-2. デベロッパーモードをON
-3. 「パッケージ化されていない拡張機能を読み込む」
-4. この `gofile-tab-manager` フォルダを選択
+## アンインストール
 
-## Edgeへのインストール
+Chrome / Edge の拡張機能管理画面から Gofile Tab Manager を削除してください。
 
-1. `edge://extensions/` を開く
-2. 開発者モードをON
-3. 「展開して読み込み」
-4. この `gofile-tab-manager` フォルダを選択
+本拡張が独自に作成する外部ファイルやデータベースはありません。Close History 等はブラウザの extension storage に保存されます。拡張削除後の storage の完全削除タイミングはブラウザ実機で未確認です。
 
 ## 使用方法
 
-インストール後は通常どおりGofileを利用してください。明確なDEADタブと重複タブは全ウィンドウを対象に自動整理されます。
+インストール後は、通常どおり Gofile を利用します。`https://gofile.io/d/<contentId>` 形式のタブは自動的に監視されます。
 
-現在ウィンドウのタブ順を整理したい時だけ、拡張アイコンを開いて「並び替え」を押してください。Recent auto-closedから誤削除したタブを再オープンできます。
+### 1. DEAD タブの自動クローズ
 
-## 注意事項
+現在の実装では、次が揃った場合のみ `DEAD` の肯定的シグナルとして扱います。
 
-- 管理対象は `https://gofile.io/d/<contentId>` のみです。
-- Gofile側のDOMが変わり判定できない場合はATTENTIONになり、DEADとして削除しません。
-- Service Worker再起動後は実タブを再取得し、content scriptから再分類します。
-- PROTECTEDがある場合、安全のため完全な全体順序にならないことがあります。
-- 外部サーバーへの独自通信、テレメトリ、認証情報の独自保存は行いません。
+- `main#page` 配下に `#fm-root` が存在する
+- その中に `This content does not exist` と一致する可視 `h1` がある
+- ページタイトルが `Content not found` または `Content not found · Gofile` と一致する
+- password / private / 401 / 403 / 429 / 5xx 等の非 DEAD 条件に該当しない
+- 現在の route generation に対応する新しい DOM である
 
-## 使用権限
+Gofile 側の DOM が変わり、この条件を満たせなくなった場合は安全側に倒れ、原則 `ATTENTION` になります。
 
-- `tabs`
-- `storage`
-- host: `https://gofile.io/*`
+### 2. 重複タブの自動整理
 
-## テスト状況
+対象 URL を次の形式へ canonicalize して同一コンテンツを判定します。
 
-`node --test tests/regression.test.js` で、実コードをNodeのVMへ読み込み、DOM → classification → message → metadata → reconciliation → remove と、pending navigation、tab group、pinned、window、replacement、storage失敗をモック検証できます。実行結果と、実ブラウザでのみ確認できる項目は `tests/TEST_RESULTS.md` に記録します。
+```text
+https://gofile.io/d/<contentId>
+```
+
+- query を除去
+- fragment を除去
+- 末尾 `/` を除去
+- `contentId` の大文字・小文字は維持
+- `https://gofile.io` 以外は対象外
+
+同一 canonical URL が複数ある場合、通常は最も古く認識された非 PROTECTED タブを残します。PROTECTED が含まれる場合は PROTECTED を優先して残し、非 PROTECTED だけを削除します。PROTECTED 同士は削除しません。
+
+### 3. 現在ウィンドウの手動並び替え
+
+拡張アイコンを開き、**並び替え**を押した時だけ現在ウィンドウを整理します。自動並び替えは行いません。
+
+基本順序は次の stable partition です。
+
+1. 非 Gofile
+2. `NORMAL` Gofile
+3. その他 Gofile（`RATE_LIMITED` / `LOADING` / `ATTENTION` など）
+
+各グループ内の相対順序は維持します。PROTECTED は固定バリアとして扱われ、その位置を跨いだ move は行いません。並び替え中にタブ構成や保護状態が変わった場合は古い計画を中止します。
+
+### 4. Recent auto-closed
+
+Popup の **Recent auto-closed** には、自動クローズされた `DEAD` / `DUPLICATE` タブが新しい順に最大 50 件表示されます。
+
+**再オープン**を押すと、保存されている URL を新しいタブとして開きます。過去の tab ID は再利用しません。再オープン時にも URL が管理対象形式か再検証されます。
+
+## 状態の意味
+
+| 状態 | 意味 | 自動クローズ |
+|---|---|---|
+| `NORMAL` | 正常な Gofile コンテンツと判断 | しない |
+| `DEAD` | 現行の not-found gate を肯定的に確認 | 対象。ただし PROTECTED は除外 |
+| `RATE_LIMITED` | 429 / rate limit を検出 | しない |
+| `LOADING` | 読み込み中・route 切替直後・判定待ち | しない |
+| `ATTENTION` | 認証、権限、通信失敗、判定不能など | しない |
+| `PROTECTED` | pinned または tab group 所属 | しない。move もしない |
+
+`PROTECTED` はページ分類として content script から送られる状態ではなく、background 側がブラウザのタブ属性から判断します。
+
+## Popup の表示
+
+Popup では現在ウィンドウについて次の件数を表示します。
+
+- `NORMAL`
+- その他 Gofile
+- `ATTENTION`
+- `PROTECTED`
+
+加えて **並び替え**ボタンと **Recent auto-closed** 履歴を表示します。
+
+## データと保存先
+
+本拡張はブラウザの extension storage だけを使用します。
+
+| Storage | Key | 内容 |
+|---|---|---|
+| `chrome.storage.local` | `closeHistory` | 自動クローズ履歴。最大 50 件 |
+| `chrome.storage.session` | `tabMeta` | `canonicalUrl` と `firstSeenAt` の簡易メタデータ |
+| `chrome.storage.session` | `pendingCloses` | クローズ処理の復旧用状態 |
+
+認証情報、Gofile の Cookie、Access Token、Password、API Key を本拡張独自の storage へ保存する実装はありません。
+
+## 再起動・復旧
+
+Manifest V3 Service Worker が再起動した場合、background は全実タブを再取得し、保存済み `firstSeenAt` を利用できる場合だけ引き継ぎつつ、分類状態を `LOADING` に戻して content script から再分類します。
+
+自動クローズ履歴の保存途中で Worker が停止した場合は `pendingCloses` を利用して復旧します。ただし、**`tabs.remove` 成功後から `removed` フェーズを session storage へ保存するまでの間に Worker が停止した場合、成功を証明できないため履歴を復元しません。** これは誤った成功履歴を作らないための意図的な安全設計です。
+
+## エラー時の挙動
+
+- classification message の送信に失敗した場合、content script は次回の DOM 変更や settle pass で再送可能な状態に戻します
+- Close History の local storage 書き込みに失敗した場合、メモリ上で保留し約 1 秒後に再試行します
+- navigation 中の古い分類は受理しません
+- 並び替え中にタブ集合や PROTECTED 構造が変化した場合は処理を中止します
+- 判定不能や想定外 DOM は削除せず `ATTENTION` にします
+
+## セキュリティと権限
+
+`manifest.json` の権限は次だけです。
+
+```text
+tabs
+storage
+host: https://gofile.io/*
+```
+
+現在のソースには独自の `fetch` / `XMLHttpRequest` による外部 API 通信、テレメトリ送信、認証情報保存処理はありません。
+
+content script は Gofile origin 全体で待機しますが、自動整理の管理対象として認識するのは `https://gofile.io/d/<contentId>` 形式だけです。これは SPA 内で管理対象ページへ遷移した場合も検知するためです。
+
+## 技術概要
+
+```text
+Gofile page
+   ↓ DOM監視 / route監視
+content.js
+   ↓ classification / route message
+background.js
+   ├─ DEAD安全確認 → tabs.remove
+   ├─ duplicate reconciliation → tabs.remove
+   ├─ Popup要求 → 状態集計 / sort / reopen
+   └─ storage.local / storage.session
+        ↑
+popup.js ─ runtime message
+```
+
+主要な構成は次のとおりです。
+
+```text
+gofile-tab-manager/
+├─ manifest.json
+├─ background.js
+├─ content.js
+├─ popup.html
+├─ popup.js
+├─ popup.css
+├─ shared/
+│  ├─ constants.js
+│  ├─ signatures.js
+│  └─ url.js
+├─ icons/
+├─ tests/
+│  ├─ regression.test.js
+│  └─ TEST_RESULTS.md
+├─ README.md
+├─ DEVELOPMENT.md
+├─ CHANGELOG.md
+└─ docs/
+   └─ ARCHITECTURE.md
+```
+
+内部実装、競合対策、不変条件、開発手順は [DEVELOPMENT.md](DEVELOPMENT.md) を参照してください。より詳しいデータフローは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) に分離しています。
+
+## テスト
+
+依存パッケージは不要です。
+
+```bash
+npm test
+```
+
+実体は次のコマンドです。
+
+```bash
+node --test tests/regression.test.js
+```
+
+`tests/TEST_RESULTS.md` に記録されている現行結果は **21 passed, 0 failed（Node.js v24.19.0）** です。
+
+今回のドキュメント整備時には、作業環境から GitHub を直接 clone できなかったため、上記テストを独自再実行できていません。したがってこれは「リポジトリに記録されている確認結果」であり、今回の作業で再検証済みという意味ではありません。
+
+実ブラウザでのみ確認できる項目や残余競合は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
+
+## 既知の制限・未確認事項
+
+- 実 Chrome / Edge での unpacked 拡張ロードと現行 Gofile DOM の実機確認は、テスト記録上 **未確認**
+- ブラウザ最小対応バージョンは未定義
+- `tabs.get` による最終確認と `tabs.remove` の間は Chromium API 上原子的ではなく、外部操作が割り込む残余競合がある
+- `tabs.remove` 成功直後、`removed` フェーズ保存前に Worker が停止した場合は Close History を復元できない
+- PROTECTED が固定バリアになるため、ウィンドウ全体が理想順に完全整列しない場合がある
+- Gofile の DOM / title 構造変更により分類できなくなった場合は、安全側に倒れて自動削除できなくなる可能性がある
+
+## トラブルシューティング
+
+### DEAD のはずのタブが閉じない
+
+**原因候補:** Gofile の DOM が変わった、まだ `LOADING`、`ATTENTION` 条件に該当、またはタブが PROTECTED。
+
+**対処:** pinned / tab group を確認し、ページの読み込み完了後も続く場合は Developer Tools で現在の not-found gate が `main#page` → `#fm-root` → `h1` 構造になっているか確認してください。DOM変更が疑われる場合は自動削除条件を安易に緩めず、テスト追加を先に行ってください。
+
+### 重複タブが残る
+
+**原因候補:** 一方が pinned / tab group、navigation 中、または URL が実際には異なる contentId。
+
+**対処:** PROTECTED 状態と URL の `<contentId>` を確認してください。query / fragment の違いだけなら同一 canonical URL として扱われます。
+
+### 並び替えが途中で中止される
+
+**原因候補:** 並び替え中にタブ追加・削除・group化・pin状態変更などが発生。
+
+**対処:** タブ操作が落ち着いてからもう一度 **並び替え**を押してください。古い計画を続行しないのは安全仕様です。
+
+### Recent auto-closed に履歴が出ない
+
+**原因候補:** storage 書き込み失敗、または Worker 停止タイミングが「削除成功を証明できない残余窓」に入った可能性があります。
+
+**対処:** Popup を開き直してください。local storage の一時エラーは自動再試行します。それでも再現する場合は `tests/TEST_RESULTS.md` の Close History / worker restart 項目と合わせて調査してください。
+
+## 開発者向け資料
+
+- [DEVELOPMENT.md](DEVELOPMENT.md) — 実装内部、保守ルール、安全上の不変条件、デバッグ、リリースチェック
+- [CHANGELOG.md](CHANGELOG.md) — 確認できたバージョン履歴
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — コンポーネント、データフロー、競合対策
+- [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) — 回帰テスト結果と実ブラウザ未確認項目
+
+## License
+
+**未設定です。** リポジトリに LICENSE / NOTICE は存在しません。ライセンスを推測して追加しないでください。
