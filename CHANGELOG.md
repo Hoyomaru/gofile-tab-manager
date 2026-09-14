@@ -1,0 +1,75 @@
+# Changelog
+
+このファイルは、Git の commit 履歴、`manifest.json`、`shared/constants.js`、既存テスト記録から確認できる変更だけを記載します。
+
+現在、GitHub Release は存在せず、調査時点で Tag による Version 境界も確認できていません。`manifest.json` と `shared/constants.js` は現在まで `1.0.0` のままです。
+
+そのため、2026-09-07 の `1.0.0` 初回追加後、2026-09-07 と 2026-09-10 に入った安全修正も **Version 1.0.0 の現行実装を構成する修正**として記録します。
+
+## [Unreleased]
+
+### Documentation
+
+- 2026-09-14: README を利用者向け主要ドキュメントとして拡充。
+- 2026-09-14: `DEVELOPMENT.md` を追加し、内部実装、安全上の不変条件、既知問題、デバッグ、リリースチェックを整理。
+- 2026-09-14: `docs/ARCHITECTURE.md` を追加し、コンポーネントとデータフローを整理。
+
+## [1.0.0] - 2026-09-07
+
+Version `1.0.0` が初めてリポジトリへ追加された日です。GitHub Release / Tag の公開日は確認できていません。
+
+### Added
+
+- Chrome / Microsoft Edge（Chromium）向け Manifest V3 拡張を追加。
+- `https://gofile.io/d/<contentId>` 形式の Gofile タブ管理を追加。
+- 明確に `DEAD` と分類されたタブの自動クローズを追加。
+- canonical URL による重複タブ整理を追加。
+- pinned / tab group 所属タブを `PROTECTED` として保護する処理を追加。
+- Popup から現在ウィンドウだけを手動 stable partition する機能を追加。
+- `chrome.storage.local` へ直近 50 件の自動クローズ履歴を保存し、Popup から再オープンする機能を追加。
+- `chrome.storage.session` を利用した tab metadata 保持を追加。
+- Gofile origin の DOM を監視して `NORMAL` / `DEAD` / `RATE_LIMITED` / `LOADING` / `ATTENTION` を分類する content script を追加。
+
+初回追加 commit: `5a363e8e115b404b5fe615e5877d11c97344d26c` — `Add Gofile Tab Manager v1.0.0`
+
+### Fixed — 2026-09-07
+
+Commit: `a8db44c20539ea99c76ca8581ea7089160ca2904` — `Fix tab lifecycle safety and add regression tests`
+
+- pending navigation 中の旧 URL 分類を無効化する処理を追加。
+- navigation version / classification revision / route generation による stale classification 防止を追加。
+- duplicate victim を削除する前に survivor の生存、URL、navigation、メタデータを再検証する処理を追加。
+- newer `NORMAL` / `ATTENTION` / `LOADING` が到着した場合に古い `DEAD` close を無効化する処理を追加。
+- pinned / tab group などの保護状態が await 中に変化した場合、古い削除・sort 計画を中止する処理を追加。
+- replacement tab で同じ canonical URL の `firstSeenAt` だけを継承し、分類状態を `LOADING` へ戻す処理を追加。
+- Close History の一時的な storage failure を再試行する処理を追加。
+- pending close operation を session storage へ保持し、Worker 再起動後に成功を証明できる履歴だけ復旧する処理を追加。
+- Close History の重複記録防止と並行 close への耐性を追加。
+- window 単位の sort 直列化と snapshot 再検証を追加。
+- 実コードを Node `vm` と Chrome API mock で検証する `tests/regression.test.js` を追加・拡充。
+
+### Fixed — 2026-09-10
+
+Commit: `862eab6c2df9aa22618a0cdd565cdcae8ad0607f` — `Fix Gofile DEAD detection and close races`
+
+- DEAD 判定を広い本文文字列から、現在の Gofile not-found gate の具体的な DOM / page title 組み合わせへ限定。
+- `main#page` → `#fm-root` → exact `h1` と `Content not found` title を使う肯定的 DEAD 判定へ変更。
+- 正常 folder / file view の DOM を肯定的な `NORMAL` シグナルとして扱うよう改善。
+- 正常ファイル名、hidden DOM、modal / toast、loading、401 / 403 / 429 / 5xx を DEAD と誤判定しない回帰テストを追加・強化。
+- SPA route change 後に古い not-found DOM を新 route の証拠として扱わない fresh generation 管理を強化。
+- page-world の URL 変更を補足する 250ms route poll を追加。
+- 現在 route の完全な not-found gate が MutationObserver で確定した場合、通常の 800ms debounce を待たず分類通知するよう改善。
+- `tabs.remove()` の開始を tab metadata / pending close intent の session storage 完了待ちにしないよう変更。
+- user-visible close の速度を維持しつつ、削除後の Close History / crash recovery bookkeeping を継続するよう調整。
+
+### Tests
+
+`tests/TEST_RESULTS.md` に保存されている現行記録:
+
+```text
+node --test tests/regression.test.js
+21 passed, 0 failed
+Node.js v24.19.0
+```
+
+同ファイルには、Node mock では PASS 扱いにしていない実ブラウザ確認項目も分離して記録されています。
