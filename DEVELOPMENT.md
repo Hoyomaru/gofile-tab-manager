@@ -2,7 +2,7 @@
 
 Gofile Tab Manager の開発・保守・AI引き継ぎ用ドキュメントです。
 
-このファイルでは README より内部実装寄りの情報を扱います。利用方法は [README.md](README.md)、全体のデータフローは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、回帰テストの記録は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
+このファイルでは README より内部実装寄りの情報を扱います。利用方法は [README.md](README.md)、バージョン履歴は [CHANGELOG.md](CHANGELOG.md)、全体のデータフローは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、回帰テストの記録は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
 
 ## 現在の状態
 
@@ -10,16 +10,20 @@ Gofile Tab Manager の開発・保守・AI引き継ぎ用ドキュメントで�
 |---|---|
 | Manifest version | 3 |
 | アプリ Version | `1.0.0` |
+| 安定版 | `v1.0.0` |
+| 初回正式リリース日 | 2026-09-14 |
+| Release / Tag 識別子 | `v1.0.0` |
+| GitHub Release 運用 | 手動公開 |
 | Version 定義 | `manifest.json` / `shared/constants.js` |
-| 調査対象コード基準 commit | `862eab6c2df9aa22618a0cdd565cdcae8ad0607f` |
-| 基準 commit 日時 | 2026-09-10 |
+| 実装の主要安全修正基準 commit | `862eab6c2df9aa22618a0cdd565cdcae8ad0607f` |
+| 上記 commit 日時 | 2026-09-10 |
 | default branch | `main` |
-| GitHub Release | なし |
-| GitHub Actions 実行履歴 | なし |
-| Issue / Pull Request | 調査時点でなし |
+| GitHub Actions | 未導入 |
 | License | 未設定 |
 
-ドキュメント整備コミットは上記コード基準 commit より後に追加されます。実装仕様を追う場合は、まず `manifest.json`、`shared/constants.js`、`background.js`、`content.js`、`tests/regression.test.js` の現行版を正としてください。
+v1.0.0 は、2026-09-07 の初回実装、その後の tab lifecycle safety 修正、2026-09-10 の DEAD detection / close race 修正、2026-09-14 の正式リリース用ドキュメント整備をまとめた最初の正式リリースです。
+
+実装仕様を追う場合は、Release note や古い説明より、まず `manifest.json`、`shared/constants.js`、`background.js`、`content.js`、`tests/regression.test.js` の該当 release / 現行版を正としてください。
 
 ### 現在の主要機能
 
@@ -44,7 +48,7 @@ Gofile Tab Manager の開発・保守・AI引き継ぎ用ドキュメントで�
 - 大量タブでの close / Popup / reopen
 - `tabs.get` 最終検証と `tabs.remove` 間の残余競合
 
-今回のドキュメント整理環境では GitHub をローカル clone できなかったため、テストは独自再実行していません。上記はリポジトリ内に保存された確認結果です。
+2026-09-14 のリリース用ドキュメント整理環境では GitHub をローカル clone できなかったため、テストは独自再実行していません。上記はリポジトリ内に保存された確認結果です。
 
 ## アーキテクチャ概要
 
@@ -176,8 +180,6 @@ document.title = "Content not found" または "Content not found · Gofile"
 - route change / classification を background へ通知
 - background からの `REQUEST_CLASSIFICATION` へ応答
 
-主要処理:
-
 #### `classifyDocument()`
 
 概略順序:
@@ -193,7 +195,7 @@ document.title = "Content not found" または "Content not found · Gofile"
 9. 12 秒以内なら `LOADING`
 10. それ以外は `ATTENTION`
 
-順序は安全上重要です。例えば error 文言を含む正常ファイル名、password gate、429、loading を DEAD より先に除外します。
+順序は安全上重要です。error 文言を含む正常ファイル名、password gate、429、loading を DEAD より先に除外します。
 
 #### route generation
 
@@ -214,9 +216,7 @@ MutationObserver の未配送 records は generation 更新前に `takeRecords()
 
 #### immediate DEAD notification
 
-現在 generation の完全な not-found gate が MutationObserver で確定した場合は通常の 800ms debounce を待たずに `sendClassification()` します。
-
-ただし `classifyDocument()` の安全条件は必ず再評価されます。
+現在 generation の完全な not-found gate が MutationObserver で確定した場合は通常の 800ms debounce を待たずに `sendClassification()` します。ただし `classifyDocument()` の安全条件は必ず再評価されます。
 
 ### `background.js`
 
@@ -342,15 +342,7 @@ canonical URL ごとにグループ化します。
 
 `splitIntoMovableSegments()` が PROTECTED を barrier として movable segment を分割し、各 segment 内だけ stable partition します。
 
-1 回の move ごとに window の snapshot を取り直します。
-
-以下が変わったら abort します。
-
-- tab の集合
-- index snapshot
-- pinned 状態
-- group 状態
-- PROTECTED の位置構造
+1 回の move ごとに window の snapshot を取り直し、tab 集合・index・pinned・group・PROTECTED 構造が変わったら abort します。
 
 window 単位に `sortChains` で直列化するため、複数の sort 要求が同じ window で同時実行されません。
 
@@ -366,8 +358,6 @@ window 単位に `sortChains` で直列化するため、複数の sort 要求�
 Popup は destructive decision を独自に行いません。close / sort / URL 検証の実体は background にあります。
 
 ## 状態遷移
-
-ページ分類の概念的な流れです。
 
 ```text
 route開始
@@ -386,13 +376,7 @@ navigation が始まると旧 classification は無効化され、新しい世�
 
 ### `chrome.storage.local.closeHistory`
 
-用途:
-
-- 自動 close した DEAD / DUPLICATE のユーザー向け履歴
-
-最大:
-
-- 50 件
+自動 close した DEAD / DUPLICATE のユーザー向け履歴です。最大 50 件です。
 
 主な entry:
 
@@ -425,17 +409,7 @@ classification state、navigationVersion、revision、documentId 等は session 
 
 ### `chrome.storage.session.pendingCloses`
 
-close 復旧用です。
-
-operation には概ね次を保存します。
-
-```text
-operationId
-phase
-entry
-```
-
-現行 phase は通常 `remove-issued` → `removed` です。
+close 復旧用です。operation には概ね `operationId`、`phase`、`entry` を保存します。現行 phase は通常 `remove-issued` → `removed` です。
 
 ## 外部 API / 外部通信
 
@@ -519,7 +493,7 @@ Service Worker 起動時:
 8. **unprotected survivor が DEAD 化している状態で duplicate victim を閉じない。** 最後の有効 tab を失う可能性がある。
 9. **SPA の古い not-found DOM を新 route の DEAD 根拠にしない。**
 10. **本文中の "not found" のような曖昧な文言だけで DEAD にしない。** 正常ファイル名等と衝突する。
-11. **storage 保存完了を user-visible close の必須前提に戻す場合は、速度とクラッシュ意味論を再検証する。** 現行は最終 live guard 後に storage と remove を並走させている。
+11. **storage 保存完了を user-visible close の必須前提に戻す場合は、速度とクラッシュ意味論を再検証する。**
 12. **削除成功を証明できない pending operation を成功履歴へ変換しない。**
 13. **sort 中に snapshot が変わったら abort する。** 古い計画を続行しない。
 14. **host permission を理由なく Gofile 以外へ広げない。**
@@ -527,7 +501,7 @@ Service Worker 起動時:
 
 ## 過去に発生した重要な問題
 
-Version は現在まで `1.0.0` のままです。Git tag / GitHub Release で細かい版が分けられていないため、以下は commit 日付で整理します。
+v1.0.0 の正式リリース日は 2026-09-14 です。以下の 2026-09-07 / 2026-09-10 の修正は **v1.0.0 公開前に取り込まれた修正**であり、別 Version のリリースではありません。
 
 ### 2026-09-07 — tab lifecycle safety 修正
 
@@ -690,9 +664,45 @@ DOM が変わっていても、最初から selector を広くしないでくだ
 
 を同期してください。
 
-## リリース前チェックリスト
+## リリース運用
 
-現在、自動 Release / CI/CD はありません。以下は現行構成に対する手動チェックです。
+v1.0.0 から、GitHub Tag / GitHub Release を正式な Version 境界として使用します。
+
+Release の命名規則:
+
+```text
+Tag: v<major>.<minor>.<patch>
+Title: Gofile Tab Manager v<major>.<minor>.<patch>
+```
+
+v1.0.0:
+
+```text
+Tag: v1.0.0
+Title: Gofile Tab Manager v1.0.0
+Release date: 2026-09-14
+```
+
+現在は build 工程・配布バイナリ・Release Asset 生成処理を持ちません。GitHub が自動提供する Source code archive が配布元です。
+
+安定版利用者向け README は Release / tag を基準にし、`main` は将来 Release より先行する可能性があるものとして扱います。
+
+### 手動リリース手順
+
+1. Release 対象コードを確定する。
+2. `manifest.json` と `shared/constants.js` の Version が一致することを確認する。
+3. 回帰テストと可能な実ブラウザ smoke test を行う。
+4. `README.md`、`DEVELOPMENT.md`、`CHANGELOG.md`、必要な docs / test results を同期する。
+5. Release 対象の最終 commit を確定する。
+6. 最終 commit に `vX.Y.Z` tag を作成する。
+7. GitHub Release を tag `vX.Y.Z` から作成する。
+8. Release title を `Gofile Tab Manager vX.Y.Z` とする。
+9. CHANGELOG と一致する Release notes を設定する。
+10. Pre-release ではない正式 Release として公開する。
+11. 公開後、Release の tag / date / Source code archive が正しいことを確認する。
+12. README / DEVELOPMENT / CHANGELOG の Release 情報と公開内容を再照合する。
+
+## リリース前チェックリスト
 
 - [ ] `manifest.json` の Version を確認
 - [ ] `shared/constants.js` の `VERSION` を確認
@@ -710,9 +720,11 @@ DOM が変わっていても、最初から selector を広くしないでくだ
 - [ ] `DEVELOPMENT.md` 更新
 - [ ] `CHANGELOG.md` 更新
 - [ ] `tests/TEST_RESULTS.md` 更新
-- [ ] Tag / GitHub Release を作る場合、Version と説明を再確認
-
-現在 Tag / GitHub Release の既存運用は確認できていません。今後導入する場合は、最初の運用を確立した時点でこの節を具体化してください。
+- [ ] Release 対象 commit を確定
+- [ ] `vX.Y.Z` Tag 作成
+- [ ] GitHub Release 作成
+- [ ] Release title / notes / date を確認
+- [ ] Source code archive から `manifest.json` が取得できることを確認
 
 ## 既知制限
 
@@ -729,7 +741,7 @@ DOM が変わっていても、最初から selector を広くしないでくだ
 - unpacked extension をフォルダ移動した場合の storage 引き継ぎ
 - uninstall 後の extension storage の実ブラウザ上の削除タイミング
 - 大量タブ時の性能上限
-- Tag 運用の有無（調査時点で tag namespace は確認できず、GitHub Release は存在しない）
+- v1.0.0 より後の versioning cadence / release frequency
 
 ## 現在の不要ファイル調査
 
