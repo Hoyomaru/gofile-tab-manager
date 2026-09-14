@@ -7,7 +7,22 @@ Gofile の `https://gofile.io/d/<contentId>` 形式のコンテンツタブだ�
 > [!IMPORTANT]
 > Gofile の公式機能・公式拡張ではありません。Gofile とは無関係の非公式ツールです。
 
-現在のバージョンは **1.0.0** です。`manifest.json` と `shared/constants.js` の Version は一致しています。
+現在の安定版は **v1.0.0** です。初回正式リリース日は **2026-09-14** とし、`manifest.json` と `shared/constants.js` の Version は `1.0.0` で一致しています。
+
+## Release
+
+| 項目 | 内容 |
+|---|---|
+| 安定版 | `v1.0.0` |
+| 正式リリース日 | 2026-09-14 |
+| Git tag | `v1.0.0` |
+| GitHub Release title | `Gofile Tab Manager v1.0.0` |
+| ビルド済みバイナリ | なし |
+| 配布形態 | GitHub Release の Source code archive または tag `v1.0.0` のソース |
+
+v1.0.0 は、2026-09-07 の初回実装、その後の tab lifecycle safety 修正、2026-09-10 の DEAD 判定・close race 修正、および 2026-09-14 のドキュメント整備を含む最初の正式リリースです。
+
+変更履歴は [CHANGELOG.md](CHANGELOG.md) を参照してください。
 
 ## このツールが解決する問題
 
@@ -52,32 +67,35 @@ Gofile の `https://gofile.io/d/<contentId>` 形式のコンテンツタブだ�
 
 ## インストール
 
+安定版を利用する場合は、GitHub Release `v1.0.0` の **Source code (zip)** を取得して展開する方法を推奨します。Git を利用する場合は tag `v1.0.0` を checkout してください。
+
 ### Chrome
 
-1. このリポジトリを ZIP で取得するか clone します。
-2. ZIP の場合は任意の場所へ展開します。
-3. `chrome://extensions/` を開きます。
-4. **デベロッパーモード**を ON にします。
-5. **パッケージ化されていない拡張機能を読み込む**を押します。
-6. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
+1. `v1.0.0` の Source code archive を取得し、任意の場所へ展開します。
+2. `chrome://extensions/` を開きます。
+3. **デベロッパーモード**を ON にします。
+4. **パッケージ化されていない拡張機能を読み込む**を押します。
+5. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
 
 ### Microsoft Edge
 
-1. このリポジトリを ZIP で取得するか clone します。
-2. ZIP の場合は任意の場所へ展開します。
-3. `edge://extensions/` を開きます。
-4. **開発者モード**を ON にします。
-5. **展開して読み込み**を押します。
-6. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
+1. `v1.0.0` の Source code archive を取得し、任意の場所へ展開します。
+2. `edge://extensions/` を開きます。
+3. **開発者モード**を ON にします。
+4. **展開して読み込み**を押します。
+5. `manifest.json` がある `gofile-tab-manager` フォルダを選択します。
 
 ビルドや `npm install` は不要です。ブラウザがリポジトリ内の JavaScript / HTML / CSS を直接読み込みます。
 
 ## 更新
 
-1. 最新ソースを同じ展開先へ上書きするか、Git 利用時は最新 `main` を取得します。
-2. 拡張機能管理画面を開きます。
-3. Gofile Tab Manager の **再読み込み**を実行します。
-4. 必要に応じて Gofile の既存タブを再読み込みします。
+安定版利用者は、原則として GitHub Release の新しい Version へ更新してください。`main` は今後の開発で Release より先行する可能性があります。
+
+1. 新しい Release の Source code を取得します。
+2. 現在と同じ展開先へ上書きします。
+3. 拡張機能管理画面を開きます。
+4. Gofile Tab Manager の **再読み込み**を実行します。
+5. 必要に応じて Gofile の既存タブを再読み込みします。
 
 `chrome.storage.local` / `chrome.storage.session` の引き継ぎは拡張 ID に依存します。**展開先フォルダを変更した場合のデータ引き継ぎは未確認**のため、更新時は同じ展開先を維持することを推奨します。
 
@@ -258,9 +276,9 @@ npm test
 node --test tests/regression.test.js
 ```
 
-`tests/TEST_RESULTS.md` に記録されている現行結果は **21 passed, 0 failed（Node.js v24.19.0）** です。
+`tests/TEST_RESULTS.md` に記録されている v1.0.0 の結果は **21 passed, 0 failed（Node.js v24.19.0）** です。
 
-今回のドキュメント整備時には、作業環境から GitHub を直接 clone できなかったため、上記テストを独自再実行できていません。したがってこれは「リポジトリに記録されている確認結果」であり、今回の作業で再検証済みという意味ではありません。
+2026-09-14 のリリース用ドキュメント整備環境では、作業環境から GitHub を直接 clone できなかったため、上記テストを独自再実行できていません。したがってこれは「リポジトリに記録されている確認結果」であり、今回のドキュメント作業で再検証済みという意味ではありません。
 
 実ブラウザでのみ確認できる項目や残余競合は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
 
@@ -302,7 +320,7 @@ node --test tests/regression.test.js
 ## 開発者向け資料
 
 - [DEVELOPMENT.md](DEVELOPMENT.md) — 実装内部、保守ルール、安全上の不変条件、デバッグ、リリースチェック
-- [CHANGELOG.md](CHANGELOG.md) — 確認できたバージョン履歴
+- [CHANGELOG.md](CHANGELOG.md) — 正式リリース日を含むバージョン履歴
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — コンポーネント、データフロー、競合対策
 - [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) — 回帰テスト結果と実ブラウザ未確認項目
 
