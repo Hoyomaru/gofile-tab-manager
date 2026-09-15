@@ -10,7 +10,29 @@ Version `1.0.0` の実装自体は 2026-09-07 にリポジトリへ追加され�
 
 ## [Unreleased]
 
-現在、v1.0.0 公開後の未リリース変更はありません。
+### Added
+
+- GitHub Actions で Node.js 24 の `npm test` を push / pull request ごとに自動実行する CI を追加。
+- `manifest.json` と `shared/constants.js` の Version 一致を含む安全性 invariant test を追加。
+- Popup に `RATE_LIMITED` / `LOADING` の詳細件数表示を追加。
+- Popup に現在ウィンドウの Gofile タブを手動で再判定する機能を追加。
+- Popup にグローバルな自動クローズ一時停止 / 再開機能を追加。停止中も分類・表示・手動並び替え・履歴再オープンは利用可能。
+- 自動クローズ再開時に全ウィンドウの管理対象タブを再判定し、停止中に残った `DEAD` を再評価する処理を追加。
+
+### Fixed
+
+- CSS class 等によって祖先要素が非表示になっている場合、子要素だけの computed style を見て可視と誤判定する可能性を修正。祖先 chain の computed style も確認するよう変更。
+- `pagehide` 後の `pageshow` / BFCache 復帰で 250ms route poll が再開されない問題を修正。
+- SPA route change ごとに settle 再分類 timer を作り直し、DOM mutation が止まった場合でも `LOADING` が適切に再評価されるよう修正。
+- 401 / 403 / 429 / 5xx 等の文字列をページ本文全体へ適用していた分類を、可視な status heading / alert 領域へ限定し、正常ファイル名や本文中の数字による誤分類を抑制。
+- 自動クローズ一時停止は `closeTabSafely()` の開始時と、非同期 guard 完了後の最終 destructive boundary の両方で再確認するようにし、停止操作と進行中 close の競合を安全側へ寄せた。
+- 自動クローズ設定を Service Worker 起動時に読み取れない場合は fail-safe で停止扱いにするよう変更。
+
+### Tests
+
+- 既存の `tests/regression.test.js` に加え、安全性 invariant、Popup 再判定配線、自動クローズ一時停止 guard のテストを追加。
+- `npm test` は `tests/*.test.js` を実行するよう変更。
+- 上記変更は GitHub Actions 上で既存回帰テストを含めて成功確認済み。
 
 ## [1.0.0] - 2026-09-14
 
