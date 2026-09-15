@@ -17,6 +17,7 @@ Gofile の `https://gofile.io/d/<contentId>` 形式のコンテンツタブだ�
 | リリース日 | 2026-09-15 |
 | Git tag | `v1.1.0` |
 | GitHub Release title | `Gofile Tab Manager v1.1.0` |
+| License | MIT License |
 | ビルド済みバイナリ | なし |
 | 配布形態 | GitHub Release の Source code archive または tag `v1.1.0` のソース |
 
@@ -267,6 +268,7 @@ popup.js ─ runtime / tabs message
 ```text
 gofile-tab-manager/
 ├─ .github/workflows/test.yml
+├─ LICENSE
 ├─ manifest.json
 ├─ background.js
 ├─ content.js
@@ -336,4 +338,6 @@ local storage の一時失敗は自動再試行します。Worker 停止が「�
 
 ## License
 
-**未設定です。** リポジトリに LICENSE / NOTICE は存在しません。ライセンスを推測して追加しないでください。
+このプロジェクトは **MIT License** で提供されます。詳細は [LICENSE](LICENSE) を参照してください。
+
+Copyright (c) 2026 Hoyomaru
