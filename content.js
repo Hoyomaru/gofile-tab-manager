@@ -16,6 +16,7 @@
   let routeAwaitingRender = false;
   let freshDeadSignalGeneration = -1;
   let debounceHandle = null;
+  let settleHandle = null;
   let routePollHandle = null;
   let lastSentKey = '';
   let observer = null;
@@ -41,6 +42,7 @@
   }
 
   function isHiddenByAttributesOrStyle(node) {
+    const view = document.defaultView || globalThis;
     for (let current = node; current; current = current.parentElement) {
       if (current.hidden || current.getAttribute?.('aria-hidden') === 'true') {
         return true;
@@ -56,20 +58,20 @@
       if (/\bdisplay\s*:\s*none\b|\bvisibility\s*:\s*hidden\b|\bopacity\s*:\s*0(?:[;\s]|$)/i.test(inlineStyle)) {
         return true;
       }
-    }
 
-    try {
-      const view = document.defaultView || globalThis;
-      const style = view.getComputedStyle?.(node);
-      if (style && (
-        style.display === 'none' ||
-        style.visibility === 'hidden' ||
-        style.opacity === '0'
-      )) {
-        return true;
+      try {
+        const style = view.getComputedStyle?.(current);
+        if (style && (
+          style.display === 'none' ||
+          style.visibility === 'hidden' ||
+          style.visibility === 'collapse' ||
+          style.opacity === '0'
+        )) {
+          return true;
+        }
+      } catch {
+        // A DOM shim or an unusual page may not expose computed styles.
       }
-    } catch {
-      // A DOM shim or an unusual page may not expose computed styles.
     }
 
     return false;
@@ -85,6 +87,19 @@
 
   function allVisibleSelectorsExist(selectors) {
     return selectors.every((selector) => querySelectorAllSafe(selector).some(isVisible));
+  }
+
+  function visibleStatusText() {
+    const selectors = [
+      'main[id="page"] [id="fm-root"] h1',
+      'main[id="page"] [id="fm-root"] [role="alert"]'
+    ];
+    return selectors
+      .flatMap((selector) => querySelectorAllSafe(selector))
+      .filter(isVisible)
+      .map(normalizedText)
+      .filter(Boolean)
+      .join(' ');
   }
 
   function matchesSelectorSafe(node, selector) {
@@ -260,11 +275,12 @@
       return STATES.LOADING;
     }
 
-    if (anyPatternMatches(Signatures.NON_DEAD_ATTENTION_TEXT, bodyText)) {
+    const statusText = visibleStatusText();
+    if (statusText && anyPatternMatches(Signatures.NON_DEAD_ATTENTION_TEXT, statusText)) {
       return STATES.ATTENTION;
     }
 
-    if (anyPatternMatches(Signatures.RATE_LIMIT_TEXT, bodyText)) {
+    if (statusText && anyPatternMatches(Signatures.RATE_LIMIT_TEXT, statusText)) {
       return STATES.RATE_LIMITED;
     }
 
@@ -346,6 +362,36 @@
     }).catch(() => {});
   }
 
+  function scheduleClassification() {
+    clearTimeout(debounceHandle);
+    debounceHandle = setTimeout(sendClassification, CLASSIFY_DEBOUNCE_MS);
+  }
+
+  function scheduleSettleClassification() {
+    clearTimeout(settleHandle);
+    if (!isManagedRoute()) {
+      settleHandle = null;
+      return;
+    }
+
+    const generation = routeGeneration;
+    settleHandle = setTimeout(() => {
+      settleHandle = null;
+      if (generation !== routeGeneration || !isManagedRoute()) {
+        return;
+      }
+      lastSentKey = '';
+      sendClassification();
+    }, CLASSIFY_SETTLE_MS + CLASSIFY_DEBOUNCE_MS);
+  }
+
+  function startRoutePoll() {
+    if (routePollHandle !== null) {
+      return;
+    }
+    routePollHandle = setInterval(invalidateRouteIfChanged, 250);
+  }
+
   function invalidateRouteIfChanged() {
     if (location.href === lastObservedHref) {
       return false;
@@ -378,17 +424,15 @@
     lastSentKey = '';
     clearTimeout(debounceHandle);
     debounceHandle = null;
+    clearTimeout(settleHandle);
+    settleHandle = null;
     sendRouteChanged();
 
     if (isManagedRoute()) {
+      scheduleSettleClassification();
       sendClassification();
     }
     return true;
-  }
-
-  function scheduleClassification() {
-    clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(sendClassification, CLASSIFY_DEBOUNCE_MS);
   }
 
   function startObserver() {
@@ -423,9 +467,11 @@
   addEventListener('hashchange', invalidateRouteIfChanged);
   addEventListener('pageshow', () => {
     startObserver();
+    startRoutePoll();
     invalidateRouteIfChanged();
     if (isManagedRoute()) {
       scheduleClassification();
+      scheduleSettleClassification();
     }
   });
   addEventListener('pagehide', () => {
@@ -433,6 +479,8 @@
     observer = null;
     clearTimeout(debounceHandle);
     debounceHandle = null;
+    clearTimeout(settleHandle);
+    settleHandle = null;
     clearInterval(routePollHandle);
     routePollHandle = null;
   });
@@ -465,17 +513,11 @@
   }
 
   startObserver();
-  routePollHandle = setInterval(invalidateRouteIfChanged, 250);
+  startRoutePoll();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scheduleClassification, { once: true });
   } else if (isManagedRoute()) {
     scheduleClassification();
   }
-
-  setTimeout(() => {
-    if (isManagedRoute()) {
-      lastSentKey = '';
-      sendClassification();
-    }
-  }, CLASSIFY_SETTLE_MS + CLASSIFY_DEBOUNCE_MS);
+  scheduleSettleClassification();
 })();
