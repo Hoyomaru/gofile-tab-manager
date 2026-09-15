@@ -20,7 +20,8 @@
     STORAGE_KEYS: Object.freeze({
       CLOSE_HISTORY: 'closeHistory',
       TAB_META: 'tabMeta',
-      PENDING_CLOSES: 'pendingCloses'
+      PENDING_CLOSES: 'pendingCloses',
+      AUTO_CLOSE_PAUSED: 'autoClosePaused'
     }),
     HISTORY_LIMIT: 50,
     CLASSIFY_DEBOUNCE_MS: 800,
