@@ -45,7 +45,15 @@ h2 {
   font-size: 12px;
 }
 
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .primary,
+.secondary,
 .history-item button {
   appearance: none;
   border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
@@ -54,16 +62,24 @@ h2 {
   font: inherit;
 }
 
-.primary {
-  width: 100%;
-  margin-top: 14px;
+.primary,
+.secondary {
   padding: 10px 12px;
-  background: AccentColor;
-  color: AccentColorText;
   font-weight: 700;
 }
 
+.primary {
+  background: AccentColor;
+  color: AccentColorText;
+}
+
+.secondary {
+  background: ButtonFace;
+  color: ButtonText;
+}
+
 .primary:disabled,
+.secondary:disabled,
 .history-item button:disabled {
   cursor: default;
   opacity: 0.55;
