@@ -570,9 +570,8 @@ Title: Gofile Tab Manager v<major>.<minor>.<patch>
 - [x] GitHub Actions CI 導入済み
 - [x] Automated tests success
 - [x] 2026-09-15 real-browser verification: no defects found
-- [x] README / DEVELOPMENT / CHANGELOG / TEST_RESULTS synchronized
+- [x] README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS synchronized
 - [x] MIT License added (`LICENSE`, `package.json`, docs)
-- [ ] `docs/ARCHITECTURE.md` synchronized
 - [ ] `v1.1.0` tag created
 - [ ] GitHub Release `Gofile Tab Manager v1.1.0` published
 
