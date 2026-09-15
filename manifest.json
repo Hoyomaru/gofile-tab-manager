@@ -36,7 +36,8 @@
         "shared/constants.js",
         "shared/url.js",
         "shared/signatures.js",
-        "content.js"
+        "content.js",
+        "reclassify.js"
       ],
       "run_at": "document_start"
     }

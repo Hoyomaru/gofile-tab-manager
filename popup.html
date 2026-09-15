@@ -15,12 +15,17 @@
       <div class="stats" aria-live="polite">
         <div><span>NORMAL</span><strong id="normal-count">0</strong></div>
         <div><span>その他Gofile</span><strong id="other-count">0</strong></div>
+        <div><span>RATE_LIMITED</span><strong id="rate-limited-count">0</strong></div>
+        <div><span>LOADING</span><strong id="loading-count">0</strong></div>
         <div><span>ATTENTION</span><strong id="attention-count">0</strong></div>
         <div><span>PROTECTED</span><strong id="protected-count">0</strong></div>
       </div>
     </section>
 
-    <button id="sort-button" class="primary" type="button">並び替え</button>
+    <div class="actions">
+      <button id="reclassify-button" class="secondary" type="button">再判定</button>
+      <button id="sort-button" class="primary" type="button">並び替え</button>
+    </div>
     <p id="status" class="status" role="status"></p>
 
     <section aria-labelledby="history-heading">
@@ -30,6 +35,7 @@
   </main>
 
   <script src="shared/constants.js"></script>
+  <script src="shared/url.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
