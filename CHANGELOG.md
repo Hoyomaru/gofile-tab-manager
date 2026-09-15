@@ -16,6 +16,7 @@ GitHub Release:
 
 - Tag: `v1.1.0`
 - Title: `Gofile Tab Manager v1.1.0`
+- License: MIT License
 - 配布形態: GitHub が自動提供する Source code archive
 
 ### Added
@@ -27,6 +28,7 @@ GitHub Release:
 - Popup にグローバルな自動クローズ一時停止 / 再開機能を追加。停止中も分類・表示・手動並び替え・履歴再オープンは利用可能。
 - 自動クローズ再開時に全ウィンドウの管理対象タブを再判定し、停止中に残った `DEAD` を再評価する処理を追加。
 - `.gitignore` を追加。
+- MIT License を追加し、`package.json` と各ドキュメントのライセンス表記を統一。
 
 ### Fixed
 
@@ -48,6 +50,7 @@ GitHub Release:
 
 - README / DEVELOPMENT / ARCHITECTURE / TEST_RESULTS を v1.1.0 の実装・運用内容へ同期。
 - GitHub Actions 導入済み、実機検証済み、自動クローズ一時停止、再判定、詳細ステータス表示を反映。
+- README / DEVELOPMENT / ARCHITECTURE / `package.json` を MIT License 表記へ統一し、ルートへ `LICENSE` を追加。
 
 ## [1.0.0] - 2026-09-14
 
