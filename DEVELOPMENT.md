@@ -19,7 +19,7 @@ Gofile Tab Manager の開発・保守・AI 引き継ぎ用ドキュメントで�
 | GitHub Actions | 導入済み。Node.js 24 / `npm test` |
 | 実ブラウザ検証 | 2026-09-15 実施、不具合なし |
 | 最小対応ブラウザ Version | 未定義 |
-| License | 未設定 |
+| License | MIT License |
 
 v1.1.0 は v1.0.0 の destructive safety 方針を維持しつつ、content lifecycle 修正、CI、Popup の再判定 / 詳細状態表示、自動クローズ一時停止 / 再開を追加したリリースです。
 
@@ -522,6 +522,7 @@ GitHub Actions:
 - storage schema 変更 → migration / backward compatibility を検討
 - permission 追加 → README に security impact を明記
 - destructive behavior 拡張 → positive proof と regression test を先に用意
+- licensing を変更する場合は `LICENSE` / README / DEVELOPMENT / `package.json` を同期
 
 開発終了時:
 
@@ -553,14 +554,14 @@ Title: Gofile Tab Manager v<major>.<minor>.<patch>
 2. `manifest.json` と `shared/constants.js` の Version 一致を確認。
 3. `npm test` と GitHub Actions を確認。
 4. 実ブラウザ smoke test を実施。
-5. README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS を同期。
+5. README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS / LICENSE を同期。
 6. Release 対象の最終 commit を確定。
 7. 最終 commit に `vX.Y.Z` tag を作成。
 8. GitHub Release をその tag から作成。
 9. Title を `Gofile Tab Manager vX.Y.Z` とする。
 10. CHANGELOG と一致する Release notes を設定。
 11. Pre-release ではない正式 Release として公開。
-12. 公開後、tag / date / source archive / README の Version を確認。
+12. 公開後、tag / date / source archive / README / License を確認。
 
 ### v1.1.0 release checklist
 
@@ -569,10 +570,14 @@ Title: Gofile Tab Manager v<major>.<minor>.<patch>
 - [x] GitHub Actions CI 導入済み
 - [x] Automated tests success
 - [x] 2026-09-15 real-browser verification: no defects found
-- [x] README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS synchronized
+- [x] README / DEVELOPMENT / CHANGELOG / TEST_RESULTS synchronized
+- [x] MIT License added (`LICENSE`, `package.json`, docs)
+- [ ] `docs/ARCHITECTURE.md` synchronized
 - [ ] `v1.1.0` tag created
 - [ ] GitHub Release `Gofile Tab Manager v1.1.0` published
 
 ## License
 
-未設定です。LICENSE / NOTICE はありません。ライセンス選択は project policy / legal decision のため、推測で追加しないでください。
+このプロジェクトは **MIT License** で提供します。正式なライセンス本文は [LICENSE](LICENSE) を参照してください。
+
+Copyright (c) 2026 Hoyomaru
