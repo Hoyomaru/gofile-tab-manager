@@ -2,7 +2,7 @@
   'use strict';
 
   const { Constants, Url } = globalThis.GofileTabManager;
-  const { MESSAGE_TYPES, STATES } = Constants;
+  const { MESSAGE_TYPES, STATES, STORAGE_KEYS } = Constants;
   const elements = {
     normal: document.querySelector('#normal-count'),
     other: document.querySelector('#other-count'),
@@ -10,6 +10,7 @@
     loading: document.querySelector('#loading-count'),
     attention: document.querySelector('#attention-count'),
     protected: document.querySelector('#protected-count'),
+    pauseButton: document.querySelector('#pause-button'),
     reclassifyButton: document.querySelector('#reclassify-button'),
     sortButton: document.querySelector('#sort-button'),
     status: document.querySelector('#status'),
@@ -20,6 +21,24 @@
 
   function isProtected(tab) {
     return Boolean(tab?.pinned) || (Number.isInteger(tab?.groupId) && tab.groupId !== -1);
+  }
+
+  async function readAutoClosePaused() {
+    const stored = await chrome.storage.local.get(STORAGE_KEYS.AUTO_CLOSE_PAUSED);
+    return stored?.[STORAGE_KEYS.AUTO_CLOSE_PAUSED] === true;
+  }
+
+  function renderPauseState(paused) {
+    elements.pauseButton.textContent = paused ? '自動クローズ再開' : '自動クローズ一時停止';
+    elements.pauseButton.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  }
+
+  async function requestReclassification(tabs) {
+    const managed = tabs.filter((tab) => Number.isInteger(tab.id) && Url.isManagedGofileUrl(tab.url || ''));
+    const results = await Promise.all(managed.map((tab) =>
+      chrome.tabs.sendMessage(tab.id, { type: MESSAGE_TYPES.REQUEST_RECLASSIFICATION }).catch(() => null)
+    ));
+    return results.filter((result) => result?.ok).length;
   }
 
   function formatDate(timestamp) {
@@ -88,9 +107,10 @@
       return;
     }
     const tabs = await chrome.tabs.query({ windowId: currentWindowId });
-    const [response, details] = await Promise.all([
+    const [response, details, paused] = await Promise.all([
       chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_POPUP_STATE, windowId: currentWindowId }),
-      getLiveDetails(tabs)
+      getLiveDetails(tabs),
+      readAutoClosePaused()
     ]);
     if (!response?.ok) {
       elements.status.textContent = '状態を取得できませんでした。';
@@ -102,8 +122,36 @@
     elements.loading.textContent = details.loading;
     elements.attention.textContent = response.counts.attention;
     elements.protected.textContent = response.counts.protected;
+    renderPauseState(paused);
     renderHistory(response.history || []);
   }
+
+  elements.pauseButton.addEventListener('click', async () => {
+    if (elements.pauseButton.disabled) return;
+    elements.pauseButton.disabled = true;
+    try {
+      const paused = await readAutoClosePaused();
+      const nextPaused = !paused;
+      await chrome.storage.local.set({ [STORAGE_KEYS.AUTO_CLOSE_PAUSED]: nextPaused });
+      renderPauseState(nextPaused);
+
+      if (nextPaused) {
+        elements.status.textContent = '自動クローズを一時停止しました。';
+      } else {
+        // Resume globally: duplicate reconciliation is triggered by the
+        // background storage listener, while reclassification makes existing
+        // DEAD tabs across all windows eligible again without a reload.
+        const allTabs = await chrome.tabs.query({});
+        const accepted = await requestReclassification(allTabs);
+        elements.status.textContent = `自動クローズを再開し、${accepted}件を再判定しました。`;
+      }
+      await refresh();
+    } catch {
+      elements.status.textContent = '自動クローズ設定を変更できませんでした。';
+    } finally {
+      elements.pauseButton.disabled = false;
+    }
+  });
 
   elements.reclassifyButton.addEventListener('click', async () => {
     if (!Number.isInteger(currentWindowId) || elements.reclassifyButton.disabled) return;
@@ -111,11 +159,7 @@
     elements.status.textContent = '再判定中…';
     try {
       const tabs = await chrome.tabs.query({ windowId: currentWindowId });
-      const managed = tabs.filter((tab) => Number.isInteger(tab.id) && Url.isManagedGofileUrl(tab.url || ''));
-      const results = await Promise.all(managed.map((tab) =>
-        chrome.tabs.sendMessage(tab.id, { type: MESSAGE_TYPES.REQUEST_RECLASSIFICATION }).catch(() => null)
-      ));
-      const accepted = results.filter((result) => result?.ok).length;
+      const accepted = await requestReclassification(tabs);
       elements.status.textContent = `${accepted}件を再判定しました。`;
       await refresh();
     } catch {

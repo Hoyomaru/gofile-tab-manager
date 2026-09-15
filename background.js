@@ -20,6 +20,7 @@ let reconciliationChain = Promise.resolve();
 let initialized = false;
 let initializationPromise = null;
 let closeSequence = 0;
+let autoClosePaused = false;
 
 function isProtected(tab) {
   return Boolean(tab?.pinned) || (Number.isInteger(tab?.groupId) && tab.groupId !== TAB_GROUP_NONE);
@@ -128,6 +129,16 @@ async function loadSessionMeta() {
     return result?.[STORAGE_KEYS.TAB_META] || {};
   } catch {
     return {};
+  }
+}
+
+async function loadAutoClosePaused() {
+  try {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.AUTO_CLOSE_PAUSED);
+    return result?.[STORAGE_KEYS.AUTO_CLOSE_PAUSED] === true;
+  } catch {
+    // Destructive behavior fails safe if the preference cannot be read.
+    return true;
   }
 }
 
@@ -287,11 +298,13 @@ function startCloseOperation(entry) {
 }
 
 async function initializeFromLiveTabs() {
-  const [tabs, stored] = await Promise.all([
+  const [tabs, stored, paused] = await Promise.all([
     chrome.tabs.query({}),
-    loadSessionMeta()
+    loadSessionMeta(),
+    loadAutoClosePaused()
   ]);
 
+  autoClosePaused = paused;
   tabMeta.clear();
   navigationVersions.clear();
   classificationRevisions.clear();
@@ -405,7 +418,7 @@ async function validateDuplicatePlan(plan, liveVictim) {
 }
 
 async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
-  if (!Number.isInteger(tab?.id) || closingTabIds.has(tab.id)) {
+  if (!Number.isInteger(tab?.id) || closingTabIds.has(tab.id) || autoClosePaused) {
     return false;
   }
 
@@ -434,6 +447,12 @@ async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
     if (!isStableLiveTab(live, expectedCanonicalUrl) ||
         (guard?.classification && !isCurrentDeadCandidate(guard.classification, live, true)) ||
         (guard?.duplicate && !await validateDuplicatePlan(guard.duplicate, live))) {
+      return false;
+    }
+
+    // Pause can change while async guards are running. Check it again at the
+    // final destructive boundary so a newly paused extension does not remove.
+    if (autoClosePaused) {
       return false;
     }
 
@@ -1081,6 +1100,16 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     await persistSessionMeta();
     await enqueueReconciliation();
   })().catch(() => {});
+});
+
+chrome.storage.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== 'local' || !Object.prototype.hasOwnProperty.call(changes, STORAGE_KEYS.AUTO_CLOSE_PAUSED)) {
+    return;
+  }
+  autoClosePaused = changes[STORAGE_KEYS.AUTO_CLOSE_PAUSED]?.newValue === true;
+  if (!autoClosePaused) {
+    enqueueReconciliation();
+  }
 });
 
 startInitialization().catch(() => {});
