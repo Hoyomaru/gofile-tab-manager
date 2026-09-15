@@ -1,47 +1,85 @@
-# Gofile Tab Manager v1.0.0 — Test Results
+# Gofile Tab Manager v1.1.0 — Test Results
 
-## 実行可能な回帰テスト
+## Automated regression tests
 
-テストコードは `tests/regression.test.js` です。依存パッケージは使用していません。
+テストは Node 標準モジュールだけで動作し、依存パッケージは使用していません。
+
+```bash
+npm test
+```
+
+`package.json` は `tests/*.test.js` を実行します。
+
+現在のテスト構成:
+
+- `tests/regression.test.js` — v1.0.0 から継続している DOM / tabs / storage / race 回帰テスト
+- `tests/safety-invariants.test.js` — Version 一致、visibility、BFCache route poll、SPA settle、status text scope などの安全性 invariant
+- `tests/popup-features.test.js` — Popup の再判定・詳細ステータス表示の配線
+- `tests/auto-close-pause.test.js` — 自動クローズ一時停止の destructive boundary guard
+
+GitHub Actions の Node.js 24 ジョブで、v1.1.0 変更を含む `npm test` が成功しています。
+
+### v1.0.0 historical result
+
+v1.0.0 時点で保存されていた基礎回帰テスト結果:
 
 ```text
 node --test tests/regression.test.js
+21 passed, 0 failed
+Node.js v24.19.0
 ```
 
-結果: **21 passed, 0 failed**（Node.js v24.19.0）
+この 21 件は v1.1.0 でも削除せず維持し、新しい安全性・Popup・pause テストを追加しています。
 
-修正前の再現確認は、作業ツリーを変更せずHEADのファイルを `git show` で読み込む方式です。
+## Automated test coverage
 
-```text
-node -e "process.env.GFTM_SOURCE='HEAD'; require('./tests/regression.test.js')"
-```
+主な確認範囲:
 
-結果: **12 failed**。本文全体のDEAD誤判定、origin外からのSPA監視欠落、duplicate survivor消失、pendingUrl無視、stale DEAD、sort中の保護構造変更、replacementのfirstSeenAt消失、履歴保存欠落などを修正前に検出しました。
+- **DEAD判定**: 正常ファイル名、hidden DOM、CSS で非表示の祖先、modal/toast、loading、401/403/429/5xx を DEAD にしない。現在の Gofile not-found gate が揃った場合だけ DEAD とする。
+- **正常画面**: `#fm-header` / `#fm-list`、単一ファイル表示の download/properties 操作を肯定的な NORMAL signal とする。
+- **status text scope**: 401 / 403 / 429 / 5xx 等の文字列をページ本文全体ではなく可視 status heading / alert へ限定し、通常ファイル名や本文中の数値で誤分類しない。
+- **visibility**: 判定対象自身だけでなく祖先 chain の computed style も確認する。
+- **duplicate**: canonical URL、最古 survivor、PROTECTED 優先、survivor の close/navigation/DEAD 化を await 境界で再検証する。
+- **navigation**: pendingUrl、A→B、管理対象外への commit、reload、redirect 相当、A→B→A を確認する。
+- **分類世代**: DEAD の await 中に NORMAL / ATTENTION / LOADING が到着した場合、古い削除を無効化する。
+- **SPA / BFCache**: route poll、route generation、pageshow 復帰、route ごとの settle timer を確認する。
+- **sort**: 現在 window のみ、PROTECTED を固定 barrier として stable partition。構成変更時は abort。
+- **replacement**: 同一 canonical URL なら firstSeenAt のみ継承し、state は LOADING へ reset。
+- **Close History**: remove failure、storage failure retry、並行 close、worker restart、重複記録防止、最大 50 件。
+- **高速close**: session storage 保存完了を `tabs.remove` の必須前提にしない。
+- **Popup**: `RATE_LIMITED` / `LOADING` の詳細表示、現在 window の手動再判定。
+- **auto-close pause**: DEAD / DUPLICATE の両方を停止し、close 開始時と最終 `tabs.remove` 直前の両方で pause を確認する。
+- **Version**: `manifest.json` と `shared/constants.js` の Version が一致する。
+- **構成**: host permission を `https://gofile.io/*` に限定する。
 
-## テスト範囲
+## Real-browser verification — 2026-09-15
 
-- **DEAD判定**: ファイル名、hidden DOM、modal/toast、正常領域との共存、loading中、401/403/429/5xxとの共存をDEADにしないこと。現在のGofile画面構造（`main#page` 配下の `#fm-root`、タイトル `Content not found` または実DOMの `Content not found · Gofile`、見出し `This content does not exist`）が揃った場合だけDEADとすること。親フォルダリンクの有無は判定に影響しない。
-- **正常画面**: 実画面の `#fm-header` / `#fm-list` と、単一ファイル表示のdownload/properties操作を正常性の根拠とし、エラー文言を含むファイル名をNORMALとして維持すること。
-- **duplicate**: canonical URL（query/fragment/末尾slash除去、contentIdの大小文字維持）、最古のsurvivor、PROTECTED優先、survivorのclose/navigation/DEAD化をawait境界で再検証すること。
-- **navigation**: pendingUrl中の旧URL分類の無効化、A→B、管理対象外へのcommit、同一URLreload、redirect相当、A→B→Aを確認すること。
-- **分類世代**: DEADのawait中にNORMAL/ATTENTION/LOADINGが到着した場合、古い削除を無効化すること。
-- **SPA**: origin全体でcontent scriptが待機し、pushState/replaceState相当のページ側route変更をpollでも検知し、無関係な最初のDOM更新で新しいDEAD表示の追跡を終了しないこと。旧DOMだけではDEADにせず、新しいgate表示をbackgroundの削除まで接続して確認すること。query/hashのみの変更、popstate、pageshowも確認すること。
-- **sort**: 現在windowだけ、PROTECTED（pinned/group）を固定barrierとしてstable partitionし、1タブずつ現在indexへmoveすること。move待機中のgroup化で古い計画を中止し、sort多重要求とno-opを確認すること。
-- **replacement**: 同一canonical URLのreplacementでfirstSeenAtだけ継承し、分類状態はLOADINGへresetすること。
-- **Close History**: remove失敗は記録せず、local get/setの一時失敗を保留して再試行し、並行close、worker再起動、重複記録防止、直近50件・新しい順を確認すること。
-- **高速close**: tab metadataのsession保存も`tabs.remove`の前提にせず、削除開始と永続化を並走させること。削除成功後の履歴保存と再試行を維持すること。
-- **即時DEAD分類**: 現在ルートのnot-found gateがMutationObserverで確定した場合、通常の800ms debounceを待たずにDEAD通知を送ること。loading・正常画面・古いDOMでは即時通知しないこと。
-- **構成**: manifestのhost scopeを `https://gofile.io/*` に限定し、不要なhost権限を追加しないこと。
+v1.1.0 リリース候補について実ブラウザ検証を実施し、**不具合なし**を確認しました。
 
-## 実ブラウザ確認が必要な項目
+確認対象:
 
-以下はNodeのChrome API mockではPASS扱いにしていません。
+- Chrome / Edge 系 Chromium ブラウザへ unpacked Manifest V3 拡張としてロード
+- 現在の Gofile 実 DOM で NORMAL / DEAD / RATE_LIMITED / ATTENTION 系の分類
+- DEAD 自動クローズ
+- duplicate 自動整理
+- pinned / tab group の PROTECTED
+- Popup の詳細 status count
+- Popup の手動再判定
+- 自動クローズ一時停止中に DEAD / DUPLICATE を削除しないこと
+- 自動クローズ再開後の再判定
+- 現在 window の manual sort
+- Recent auto-closed と再オープン
+- SPA route change / BFCache 復帰
+- 複数 window
+- Service Worker 停止・再起動後の再同期
 
-- Chrome/Edgeへunpacked Manifest V3拡張を実際にロードできること
-- 実Gofileページの現在のDOMで、role属性に依存せずnot-found gate（`main#page` / `#fm-root` / title / h1）と正常画面が期待どおり分類されること
-- 実ブラウザの `tabs.remove` / `tabs.move` のイベント順、複数window、pinned、tab group、redirect、BFCache復帰、Service Worker停止・再起動
-- 実際の大量タブでの自動closeとPopup表示・再オープン
+正確な Chrome / Edge の Version 番号は記録していないため、**最小対応ブラウザ Version は引き続き未定義**です。
 
-`tabs.get` による最終再検証は、Chromium APIに条件付きremoveがないため原子的ではありません。最終検証と `tabs.remove` の間に外部navigation/closeが入る残余競合は、実ブラウザでも別途確認が必要です。
+## Remaining design limitations
 
-また、`tabs.remove` 成功と `removed` フェーズのsession保存の間でworkerが停止した場合は、成功を証明できないため履歴を復元しません。これは誤った成功履歴を避けるための残余窓で、実ブラウザのworker停止タイミング確認が必要です。
+以下は不具合ではなく、API / 永続化モデル上の残余制約です。
+
+- Chromium に conditional `tabs.remove()` がないため、最終 `tabs.get()` と `tabs.remove()` の間は原子的ではない。
+- `tabs.remove()` 成功直後から `phase=removed` の session 保存までの間に Service Worker が停止した場合、extension 自身の成功を証明できないため Close History を復元しない。
+- Gofile の DOM / title 構造が将来変更された場合は false positive を避けるため安全側に倒れ、`ATTENTION` になって自動クローズできなくなる可能性がある。
+- PROTECTED は sort の固定 barrier なので、window 全体が理想的な完全順序にならない場合がある。
