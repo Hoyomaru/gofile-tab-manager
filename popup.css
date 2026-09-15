@@ -52,6 +52,10 @@ h2 {
   margin-top: 14px;
 }
 
+.actions .wide {
+  grid-column: 1 / -1;
+}
+
 .primary,
 .secondary,
 .history-item button {
