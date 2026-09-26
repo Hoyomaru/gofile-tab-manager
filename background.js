@@ -868,6 +868,39 @@ function sortWindowOnce(windowId) {
   return next;
 }
 
+function showShortcutFeedback(text) {
+  try {
+    chrome.action.setBadgeText({ text });
+    if (text === '!') {
+      chrome.action.setBadgeBackgroundColor({ color: '#b42318' });
+    } else {
+      chrome.action.setBadgeBackgroundColor({ color: '#16803a' });
+    }
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' }).catch?.(() => {});
+    }, 1800);
+  } catch {
+    // Shortcut feedback is best-effort only.
+  }
+}
+
+async function sortLastFocusedWindowFromShortcut() {
+  await ensureInitialized();
+  const activeTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const windowId = activeTabs[0]?.windowId;
+  if (!Number.isInteger(windowId)) {
+    showShortcutFeedback('!');
+    return;
+  }
+
+  try {
+    const result = await sortWindowOnce(windowId);
+    showShortcutFeedback(result.aborted ? '!' : (result.changed ? '✓' : '0'));
+  } catch {
+    showShortcutFeedback('!');
+  }
+}
+
 async function handleRouteChanged(tab, message, sender) {
   if (!Number.isInteger(tab?.id) || typeof message?.url !== 'string') {
     return false;
@@ -1100,6 +1133,15 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     await persistSessionMeta();
     await enqueueReconciliation();
   })().catch(() => {});
+});
+
+chrome.commands?.onCommand?.addListener?.((command) => {
+  if (command !== 'sort-current-window') {
+    return;
+  }
+  sortLastFocusedWindowFromShortcut().catch(() => {
+    showShortcutFeedback('!');
+  });
 });
 
 chrome.storage.onChanged?.addListener?.((changes, areaName) => {
