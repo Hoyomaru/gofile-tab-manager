@@ -10,27 +10,27 @@
   <main class="app">
     <h1>Gofile Tab Manager</h1>
 
+    <div class="actions" aria-label="タブ操作">
+      <button id="sort-button" class="primary wide" type="button">Gofileタブを並び替え</button>
+      <button id="reclassify-button" class="secondary" type="button">再判定</button>
+      <button id="pause-button" class="secondary" type="button" aria-pressed="false">自動クローズ一時停止</button>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
     <section aria-labelledby="window-state-heading">
       <h2 id="window-state-heading">現在ウィンドウの状態</h2>
       <div class="stats" aria-live="polite">
-        <div><span>NORMAL</span><strong id="normal-count">0</strong></div>
+        <div><span>正常</span><strong id="normal-count">0</strong></div>
         <div><span>その他Gofile</span><strong id="other-count">0</strong></div>
-        <div><span>RATE_LIMITED</span><strong id="rate-limited-count">0</strong></div>
-        <div><span>LOADING</span><strong id="loading-count">0</strong></div>
-        <div><span>ATTENTION</span><strong id="attention-count">0</strong></div>
-        <div><span>PROTECTED</span><strong id="protected-count">0</strong></div>
+        <div><span>アクセス制限</span><strong id="rate-limited-count">0</strong></div>
+        <div><span>読み込み中</span><strong id="loading-count">0</strong></div>
+        <div><span>要確認</span><strong id="attention-count">0</strong></div>
+        <div><span>保護</span><strong id="protected-count">0</strong></div>
       </div>
     </section>
 
-    <div class="actions">
-      <button id="pause-button" class="secondary wide" type="button" aria-pressed="false">自動クローズ一時停止</button>
-      <button id="reclassify-button" class="secondary" type="button">再判定</button>
-      <button id="sort-button" class="primary" type="button">並び替え</button>
-    </div>
-    <p id="status" class="status" role="status"></p>
-
     <section aria-labelledby="history-heading">
-      <h2 id="history-heading">Recent auto-closed</h2>
+      <h2 id="history-heading">最近自動で閉じたタブ <span id="history-count"></span></h2>
       <div id="history" class="history"></div>
     </section>
   </main>

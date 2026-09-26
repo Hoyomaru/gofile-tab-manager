@@ -25,12 +25,57 @@ test('shared message types expose popup reclassification', () => {
   );
 });
 
-test('popup exposes detailed status counters and reclassify control', () => {
+test('popup makes sort the primary action and keeps detailed status controls', () => {
   const html = source('popup.html');
+  const sortIndex = html.indexOf('id="sort-button"');
+  const stateIndex = html.indexOf('id="window-state-heading"');
+
+  assert.ok(sortIndex >= 0);
+  assert.ok(stateIndex >= 0);
+  assert.ok(sortIndex < stateIndex);
+  assert.match(html, /id="sort-button" class="primary wide"/);
+  assert.match(html, />Gofileタブを並び替え</);
   assert.match(html, /id="rate-limited-count"/);
   assert.match(html, /id="loading-count"/);
   assert.match(html, /id="reclassify-button"/);
+  assert.match(html, /id="pause-button"/);
   assert.match(html, /shared\/url\.js/);
+});
+
+test('popup presents internal states and close reasons in user-facing Japanese', () => {
+  const html = source('popup.html');
+  const popup = source('popup.js');
+
+  assert.match(html, />正常</);
+  assert.match(html, />アクセス制限</);
+  assert.match(html, />読み込み中</);
+  assert.match(html, />要確認</);
+  assert.match(html, />保護</);
+  assert.match(html, />最近自動で閉じたタブ\s*</);
+  assert.match(html, /id="history-count"/);
+  assert.match(popup, /setStatus\([^\n]+, 'success'\)/);
+  assert.match(popup, /setStatus\([^\n]+, 'error'\)/);
+
+  assert.match(popup, /reason === 'DEAD'.*'リンク切れ'/);
+  assert.match(popup, /reason === 'DUPLICATE'.*'重複'/);
+});
+
+test('popup gives sorting progress, success, and actionable error feedback', () => {
+  const popup = source('popup.js');
+  const css = source('popup.css');
+
+  assert.match(popup, /sortButton\.textContent = '並び替え中…'/);
+  assert.match(popup, /✓ Gofileタブを並び替えました。/);
+  assert.match(popup, /「再判定」後にもう一度お試しください。/);
+  assert.match(popup, /role', tone === 'error' \? 'alert' : 'status'/);
+  assert.match(css, /\.status--success/);
+  assert.match(css, /\.status--error/);
+});
+
+test('history exposes count and full truncated title', () => {
+  const popup = source('popup.js');
+  assert.match(popup, /historyCount\.textContent = history\.length \? `（\$\{history\.length\}）` : ''/);
+  assert.match(popup, /title\.title = title\.textContent/);
 });
 
 test('reclassification reuses the existing mutation-driven classifier', () => {

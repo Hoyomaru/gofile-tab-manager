@@ -14,7 +14,8 @@
     reclassifyButton: document.querySelector('#reclassify-button'),
     sortButton: document.querySelector('#sort-button'),
     status: document.querySelector('#status'),
-    history: document.querySelector('#history')
+    history: document.querySelector('#history'),
+    historyCount: document.querySelector('#history-count')
   };
 
   let currentWindowId = null;
@@ -31,6 +32,13 @@
   function renderPauseState(paused) {
     elements.pauseButton.textContent = paused ? '自動クローズ再開' : '自動クローズ一時停止';
     elements.pauseButton.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  }
+
+  function setStatus(message, tone = '') {
+    elements.status.textContent = message || '';
+    elements.status.className = `status${tone ? ` status--${tone}` : ''}`;
+    elements.status.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    elements.status.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
   }
 
   async function requestReclassification(tabs) {
@@ -52,15 +60,22 @@
     }
   }
 
+  function formatCloseReason(reason) {
+    if (reason === 'DEAD') return 'リンク切れ';
+    if (reason === 'DUPLICATE') return '重複';
+    return reason || '自動クローズ';
+  }
+
   function historyRow(item) {
     const row = document.createElement('article');
     row.className = 'history-item';
     const title = document.createElement('div');
     title.className = 'history-title';
     title.textContent = item.title || item.canonicalUrl || item.url;
+    title.title = title.textContent;
     const meta = document.createElement('div');
     meta.className = 'history-meta';
-    meta.textContent = `${item.reason} · ${formatDate(item.closedAt)}`;
+    meta.textContent = `${formatCloseReason(item.reason)} · ${formatDate(item.closedAt)}`;
     const reopen = document.createElement('button');
     reopen.type = 'button';
     reopen.textContent = '再オープン';
@@ -69,7 +84,7 @@
       const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REOPEN_HISTORY_ITEM, url: item.url }).catch(() => ({ ok: false }));
       if (!response?.ok) {
         reopen.disabled = false;
-        elements.status.textContent = '再オープンできませんでした。';
+        setStatus('再オープンできませんでした。対象タブのURLを確認して、もう一度お試しください。', 'error');
       }
     });
     row.append(title, meta, reopen);
@@ -78,6 +93,7 @@
 
   function renderHistory(history) {
     elements.history.replaceChildren();
+    elements.historyCount.textContent = history.length ? `（${history.length}）` : '';
     if (!history.length) {
       const empty = document.createElement('p');
       empty.className = 'empty';
@@ -103,7 +119,7 @@
     const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
     currentWindowId = activeTabs[0]?.windowId ?? null;
     if (!Number.isInteger(currentWindowId)) {
-      elements.status.textContent = '現在のウィンドウを取得できませんでした。';
+      setStatus('現在のウィンドウを取得できませんでした。Gofileタブのあるウィンドウでもう一度開いてください。', 'error');
       return;
     }
     const tabs = await chrome.tabs.query({ windowId: currentWindowId });
@@ -113,7 +129,7 @@
       readAutoClosePaused()
     ]);
     if (!response?.ok) {
-      elements.status.textContent = '状態を取得できませんでした。';
+      setStatus('状態を取得できませんでした。現在のタブ状態を再判定してから、もう一度お試しください。', 'error');
       return;
     }
     elements.normal.textContent = response.counts.normal;
@@ -136,18 +152,18 @@
       renderPauseState(nextPaused);
 
       if (nextPaused) {
-        elements.status.textContent = '自動クローズを一時停止しました。';
+        setStatus('自動クローズを一時停止しました。', 'success');
       } else {
         // Resume globally: duplicate reconciliation is triggered by the
         // background storage listener, while reclassification makes existing
         // DEAD tabs across all windows eligible again without a reload.
         const allTabs = await chrome.tabs.query({});
         const accepted = await requestReclassification(allTabs);
-        elements.status.textContent = `自動クローズを再開し、${accepted}件を再判定しました。`;
+        setStatus(`自動クローズを再開し、${accepted}件を再判定しました。`, 'success');
       }
       await refresh();
     } catch {
-      elements.status.textContent = '自動クローズ設定を変更できませんでした。';
+      setStatus('自動クローズ設定を変更できませんでした。状態を再判定してから、もう一度お試しください。', 'error');
     } finally {
       elements.pauseButton.disabled = false;
     }
@@ -156,14 +172,14 @@
   elements.reclassifyButton.addEventListener('click', async () => {
     if (!Number.isInteger(currentWindowId) || elements.reclassifyButton.disabled) return;
     elements.reclassifyButton.disabled = true;
-    elements.status.textContent = '再判定中…';
+    setStatus('現在のGofileタブを再判定中…', 'progress');
     try {
       const tabs = await chrome.tabs.query({ windowId: currentWindowId });
       const accepted = await requestReclassification(tabs);
-      elements.status.textContent = `${accepted}件を再判定しました。`;
+      setStatus(`${accepted}件を再判定しました。`, 'success');
       await refresh();
     } catch {
-      elements.status.textContent = '再判定できませんでした。';
+      setStatus('再判定できませんでした。Gofileタブを確認して、もう一度お試しください。', 'error');
     } finally {
       elements.reclassifyButton.disabled = false;
     }
@@ -172,22 +188,29 @@
   elements.sortButton.addEventListener('click', async () => {
     if (!Number.isInteger(currentWindowId) || elements.sortButton.disabled) return;
     elements.sortButton.disabled = true;
-    elements.status.textContent = '並び替え中…';
+    const originalLabel = elements.sortButton.textContent;
+    elements.sortButton.textContent = '並び替え中…';
+    setStatus('並び替え中…', 'progress');
     try {
       const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.SORT_CURRENT_WINDOW, windowId: currentWindowId });
       if (!response?.ok) throw new Error(response?.error || 'Sort failed');
-      elements.status.textContent = response.aborted
-        ? 'タブ構成が変わったため、並び替えを中止しました。'
-        : response.changed ? '並び替えました。' : 'すでに安全な並びです。';
+      if (response.aborted) {
+        setStatus('タブ構成が変わったため、並び替えを中止しました。現在のタブ状態を再判定してから、もう一度お試しください。', 'error');
+      } else if (response.changed) {
+        setStatus('✓ Gofileタブを並び替えました。', 'success');
+      } else {
+        setStatus('すでに安全な並びです。変更はありません。', 'neutral');
+      }
       await refresh();
     } catch {
-      elements.status.textContent = '並び替えできませんでした。';
+      setStatus('並び替えできませんでした。タブ構成を確認して「再判定」後にもう一度お試しください。', 'error');
     } finally {
+      elements.sortButton.textContent = originalLabel;
       elements.sortButton.disabled = false;
     }
   });
 
   refresh().catch(() => {
-    elements.status.textContent = '状態を取得できませんでした。';
+    setStatus('状態を取得できませんでした。現在のタブ状態を再判定してから、もう一度お試しください。', 'error');
   });
 })();

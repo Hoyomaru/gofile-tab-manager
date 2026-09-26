@@ -15,7 +15,7 @@ body {
 }
 
 h1 {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   font-size: 20px;
 }
 
@@ -24,6 +24,11 @@ h2 {
   font-size: 13px;
   font-weight: 650;
   opacity: 0.8;
+}
+
+#history-count {
+  font-weight: 500;
+  opacity: 0.75;
 }
 
 .stats {
@@ -49,7 +54,6 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 14px;
 }
 
 .actions .wide {
@@ -82,6 +86,11 @@ h2 {
   color: ButtonText;
 }
 
+#sort-button {
+  padding-block: 12px;
+  font-size: 14px;
+}
+
 .primary:disabled,
 .secondary:disabled,
 .history-item button:disabled {
@@ -92,8 +101,41 @@ h2 {
 .status {
   min-height: 1.4em;
   margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   font-size: 12px;
-  opacity: 0.8;
+  line-height: 1.4;
+  opacity: 0.82;
+}
+
+.status:not(:empty) {
+  padding: 8px 10px;
+}
+
+.status--progress {
+  border-color: color-mix(in srgb, AccentColor 45%, transparent);
+  background: color-mix(in srgb, AccentColor 10%, Canvas);
+  opacity: 1;
+}
+
+.status--success {
+  border-color: color-mix(in srgb, #16803a 55%, transparent);
+  background: color-mix(in srgb, #16803a 11%, Canvas);
+  opacity: 1;
+}
+
+.status--neutral {
+  border-color: color-mix(in srgb, CanvasText 24%, transparent);
+  background: color-mix(in srgb, CanvasText 5%, Canvas);
+  opacity: 1;
+}
+
+.status--error {
+  border-color: color-mix(in srgb, #b42318 60%, transparent);
+  background: color-mix(in srgb, #b42318 11%, Canvas);
+  opacity: 1;
+  font-weight: 650;
 }
 
 .history {
