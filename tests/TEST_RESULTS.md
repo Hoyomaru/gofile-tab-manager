@@ -1,4 +1,4 @@
-# Gofile Tab Manager v1.1.0 — Test Results
+# Gofile Tab Manager v1.2.0 — Test Results
 
 ## Automated regression tests
 
@@ -17,7 +17,7 @@ npm test
 - `tests/popup-features.test.js` — Popup の再判定・詳細ステータス表示の配線
 - `tests/auto-close-pause.test.js` — 自動クローズ一時停止の destructive boundary guard
 
-GitHub Actions の Node.js 24 ジョブで、v1.1.0 変更を含む `npm test` が成功しています。
+GitHub Actions の Node.js 24 ジョブで、全 JavaScript の `node --check` と `npm test` を実行します。v1.2.0 リリース時点の regression suite は成功済みです。
 
 ### v1.0.0 historical result
 
@@ -29,7 +29,7 @@ node --test tests/regression.test.js
 Node.js v24.19.0
 ```
 
-この 21 件は v1.1.0 でも削除せず維持し、新しい安全性・Popup・pause テストを追加しています。
+この 21 件は v1.2.0 でも削除せず維持し、安全性・Popup・pause・sort/shortcut テストを追加しています。
 
 ## Automated test coverage
 
@@ -42,6 +42,10 @@ Node.js v24.19.0
 - **duplicate**: canonical URL、最古 survivor、PROTECTED 優先、survivor の close/navigation/DEAD 化を await 境界で再検証する。
 - **navigation**: pendingUrl、A→B、管理対象外への commit、reload、redirect 相当、A→B→A を確認する。
 - **分類世代**: DEAD の await 中に NORMAL / ATTENTION / LOADING が到着した場合、古い削除を無効化する。
+- **同期分類 race**: reload 前に開始した `REQUEST_CLASSIFICATION` の旧 DEAD 応答を、同一 URL の新 navigation へ適用しない。
+- **SPA stale gate**: route change 前から残る not-found `h1` の子要素・属性・テキスト mutation を、新 route の fresh DEAD 証拠にしない。
+- **受理と削除の分離**: pause / PROTECTED 中の DEAD は分類として受理しつつ `removed=false` を返す。
+- **Close History privacy**: query / fragment を含む元 URL から canonical URL だけを保存する。
 - **SPA / BFCache**: route poll、route generation、pageshow 復帰、route ごとの settle timer を確認する。
 - **sort**: 現在 window のみ、PROTECTED を固定 barrier として stable partition。構成変更時は abort。
 - **replacement**: 同一 canonical URL なら firstSeenAt のみ継承し、state は LOADING へ reset。
@@ -52,9 +56,9 @@ Node.js v24.19.0
 - **Version**: `manifest.json` と `shared/constants.js` の Version が一致する。
 - **構成**: host permission を `https://gofile.io/*` に限定する。
 
-## Real-browser verification — 2026-09-15
+## Real-browser verification — 2026-09-27
 
-v1.1.0 リリース候補について実ブラウザ検証を実施し、**不具合なし**を確認しました。
+v1.2.0 リリース候補について実ブラウザ検証を実施し、**不具合なし**を確認しました。
 
 確認対象:
 
@@ -74,6 +78,8 @@ v1.1.0 リリース候補について実ブラウザ検証を実施し、**不�
 - Service Worker 停止・再起動後の再同期
 
 正確な Chrome / Edge の Version 番号は記録していないため、**最小対応ブラウザ Version は引き続き未定義**です。
+
+次回以降の実ブラウザ検証では、ブラウザ Version、対象 DOM、reload / SPA の操作順を記録します。
 
 ## Remaining design limitations
 
