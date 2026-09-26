@@ -60,6 +60,24 @@ test('popup presents internal states and close reasons in user-facing Japanese',
   assert.match(popup, /reason === 'DUPLICATE'.*'重複'/);
 });
 
+test('popup gives sorting progress, success, and actionable error feedback', () => {
+  const popup = source('popup.js');
+  const css = source('popup.css');
+
+  assert.match(popup, /sortButton\.textContent = '並び替え中…'/);
+  assert.match(popup, /✓ Gofileタブを並び替えました。/);
+  assert.match(popup, /「再判定」後にもう一度お試しください。/);
+  assert.match(popup, /role', tone === 'error' \? 'alert' : 'status'/);
+  assert.match(css, /\.status--success/);
+  assert.match(css, /\.status--error/);
+});
+
+test('history exposes count and full truncated title', () => {
+  const popup = source('popup.js');
+  assert.match(popup, /historyCount\.textContent = history\.length \? `（\$\{history\.length\}）` : ''/);
+  assert.match(popup, /title\.title = title\.textContent/);
+});
+
 test('reclassification reuses the existing mutation-driven classifier', () => {
   const helper = source('reclassify.js');
   assert.match(helper, /REQUEST_RECLASSIFICATION/);
