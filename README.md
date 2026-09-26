@@ -7,21 +7,21 @@ Gofile の `https://gofile.io/d/<contentId>` 形式のコンテンツタブだ�
 > [!IMPORTANT]
 > Gofile の公式機能・公式拡張ではありません。Gofile とは無関係の非公式ツールです。
 
-現在の安定版は **v1.2.0** です。`manifest.json` と `shared/constants.js` の Version は `1.2.0` で一致しています。
+現在の安定版は **v1.2.1** です。`manifest.json` と `shared/constants.js` の Version は `1.2.1` で一致しています。
 
 ## Release
 
 | 項目 | 内容 |
 |---|---|
-| 安定版 | `v1.2.0` |
+| 安定版 | `v1.2.1` |
 | リリース日 | 2026-09-27 |
-| Git tag | `v1.2.0` |
-| GitHub Release title | `Gofile Tab Manager v1.2.0` |
+| Git tag | `v1.2.1` |
+| GitHub Release title | `Gofile Tab Manager v1.2.1` |
 | License | MIT License |
 | ビルド済みバイナリ | なし |
-| 配布形態 | GitHub Release の Source code archive または tag `v1.2.0` のソース |
+| 配布形態 | GitHub Release の Source code archive または tag `v1.2.1` のソース |
 
-v1.2.0 では、並び替えをPopupのprimary actionへ整理し、同じ安全な並び替えを `Alt+Shift+S` から実行できるshortcutと結果badgeを追加しています。v1.1.0までの分類 lifecycle / 自動クローズ安全性も維持しています。変更履歴は [CHANGELOG.md](CHANGELOG.md) を参照してください。
+v1.2.1 は v1.2.0 の操作性を維持したまま、reload 前の旧分類応答、SPA の stale not-found gate、pause / PROTECTED 中の分類受理、Close History の URL 保存を安全側へ修正した patch release です。新機能は追加していません。変更履歴は [CHANGELOG.md](CHANGELOG.md) を参照してください。
 
 ## 主な機能
 
@@ -64,7 +64,7 @@ v1.2.0 では、並び替えをPopupのprimary actionへ整理し、同じ安全
 | Host permission | `https://gofile.io/*` のみ |
 | ビルド | 不要 |
 | npm 依存パッケージ | なし |
-| CI | GitHub Actions / Node.js 24 / `npm test` |
+| CI | GitHub Actions / Node.js 24 / `node --check` / `npm test` |
 | 実ブラウザ検証 | 2026-09-27 に実施、不具合なし |
 | 最小対応ブラウザ Version | 未定義 |
 
@@ -72,11 +72,11 @@ v1.2.0 では、並び替えをPopupのprimary actionへ整理し、同じ安全
 
 ## インストール
 
-安定版を利用する場合は、GitHub Release `v1.2.0` の **Source code (zip)** を取得して展開する方法を推奨します。Git を利用する場合は tag `v1.2.0` を checkout してください。
+安定版を利用する場合は、GitHub Release `v1.2.1` の **Source code (zip)** を取得して展開する方法を推奨します。Git を利用する場合は tag `v1.2.1` を checkout してください。
 
 ### Chrome
 
-1. `v1.2.0` の Source code archive を取得し、任意の場所へ展開します。
+1. `v1.2.1` の Source code archive を取得し、任意の場所へ展開します。
 2. `chrome://extensions/` を開きます。
 3. **デベロッパーモード**を ON にします。
 4. **パッケージ化されていない拡張機能を読み込む**を押します。
@@ -84,7 +84,7 @@ v1.2.0 では、並び替えをPopupのprimary actionへ整理し、同じ安全
 
 ### Microsoft Edge
 
-1. `v1.2.0` の Source code archive を取得し、任意の場所へ展開します。
+1. `v1.2.1` の Source code archive を取得し、任意の場所へ展開します。
 2. `edge://extensions/` を開きます。
 3. **開発者モード**を ON にします。
 4. **展開して読み込み**を押します。
@@ -325,7 +325,7 @@ npm test
 
 `tests/*.test.js` を Node.js 24 で実行します。GitHub Actions でも push / pull request ごとに同じテストを実行します。
 
-2026-09-27 に v1.2.0 リリース候補の実ブラウザ検証を行い、不具合なしを確認しています。詳細は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
+2026-09-27 に v1.2.1 リリース候補の実環境確認を完了しています。正確な Chrome / Edge Version 番号は未記録です。詳細は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
 
 ## 既知の制限
 

@@ -4,7 +4,7 @@
   const root = globalThis.GofileTabManager = globalThis.GofileTabManager || {};
 
   root.Constants = Object.freeze({
-    VERSION: '1.2.0',
+    VERSION: '1.2.1',
     STATES: Object.freeze({
       NORMAL: 'NORMAL',
       DEAD: 'DEAD',

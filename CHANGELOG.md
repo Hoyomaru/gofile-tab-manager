@@ -8,6 +8,10 @@
 
 次回Release向けの変更はここへ記録します。
 
+## [1.2.1] - 2026-09-27
+
+v1.2.0 の機能構成を維持したまま、誤クローズ競合と履歴 URL のプライバシーを強化する backward-compatible patch release です。新機能は追加していません。
+
 ### Fixed
 
 - reload 前の `REQUEST_CLASSIFICATION` 応答が同一 URL の新文書へ適用されないよう、問い合わせ開始時の navigation / classification identity を応答適用時に再照合。
@@ -19,6 +23,8 @@
 
 - 上記 race、旧 gate mutation、pause / PROTECTED、履歴 URL privacy の regression test を追加。
 - GitHub Actions に全 JavaScript の `node --check` を追加。
+- safety-fix PR の最終 CI で 45 tests / 45 passed / 0 failed。
+- 2026-09-27 に v1.2.1 リリース候補の実環境確認を完了。正確な Chrome / Edge Version 番号は未記録。
 
 ## [1.2.0] - 2026-09-27
 

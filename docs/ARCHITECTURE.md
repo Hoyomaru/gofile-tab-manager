@@ -1,6 +1,6 @@
 # Architecture
 
-Gofile Tab Manager v1.2.0 のコンポーネント構成、データフロー、状態管理、安全上の設計判断をまとめます。
+Gofile Tab Manager v1.2.1 のコンポーネント構成、データフロー、状態管理、安全上の設計判断をまとめます。
 
 利用者向け情報は [../README.md](../README.md)、開発・保守上の詳細は [../DEVELOPMENT.md](../DEVELOPMENT.md)、テスト状況は [../tests/TEST_RESULTS.md](../tests/TEST_RESULTS.md) を参照してください。
 
@@ -546,8 +546,8 @@ Automated:
 
 Real browser:
 
-- 2026-09-27 に v1.2.0 release candidate を検証
-- 不具合なし
+- 2026-09-27 に v1.2.1 release candidate の実環境確認を完了
+- 不具合報告なし（正確な Chrome / Edge Version 番号は未記録）
 
 詳細は [../tests/TEST_RESULTS.md](../tests/TEST_RESULTS.md) を参照してください。
 

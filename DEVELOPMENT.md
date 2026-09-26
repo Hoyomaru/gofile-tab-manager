@@ -9,11 +9,11 @@ Gofile Tab Manager の開発・保守・AI 引き継ぎ用ドキュメントで�
 | 項目 | 状態 |
 |---|---|
 | Manifest version | 3 |
-| アプリ Version | `1.2.0` |
-| 安定版 | `v1.2.0` |
-| v1.2.0 リリース日 | 2026-09-27 |
-| Release / Tag 識別子 | `v1.2.0` |
-| GitHub Release 運用 | 手動公開 |
+| アプリ Version | `1.2.1` |
+| 安定版 | `v1.2.1` |
+| v1.2.1 リリース日 | 2026-09-27 |
+| Release / Tag 識別子 | `v1.2.1` |
+| GitHub Release 運用 | `release: publish vX.Y.Z` main commit から GitHub Actions で自動公開 |
 | Version 定義 | `manifest.json` / `shared/constants.js` |
 | default branch | `main` |
 | GitHub Actions | 導入済み。Node.js 24 / `node --check` / `npm test` |
@@ -21,7 +21,7 @@ Gofile Tab Manager の開発・保守・AI 引き継ぎ用ドキュメントで�
 | 最小対応ブラウザ Version | 未定義 |
 | License | MIT License |
 
-v1.2.0 は v1.1.0 の destructive safety 方針を維持しつつ、Popup の並び替えを primary action へ整理し、同じ安全な sort 経路を `Alt+Shift+S` から実行できるようにしたリリースです。
+v1.2.1 は v1.2.0 の機能構成を維持した patch release で、reload / SPA の stale classification race、classification の受理結果、Close History URL 保存を安全側へ修正しています。新機能は追加していません。
 
 ## 現在の主要機能
 
@@ -39,7 +39,7 @@ v1.2.0 は v1.1.0 の destructive safety 方針を維持しつつ、Popup の並
 
 ## 実機検証状況
 
-2026-09-27 に v1.2.0 リリース候補の実ブラウザ検証を実施し、不具合なしを確認しています。
+2026-09-27 に v1.2.1 リリース候補の実環境確認を完了しています。
 
 確認内容は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を正としてください。正確な Chrome / Edge Version 番号は記録していないため、最小対応 Version は未定義のままです。
 
@@ -101,7 +101,7 @@ host permission を Gofile 以外へ広げないでください。
 主な定数:
 
 ```text
-VERSION = 1.2.0
+VERSION = 1.2.1
 HISTORY_LIMIT = 50
 CLASSIFY_DEBOUNCE_MS = 800
 CLASSIFY_SETTLE_MS = 12000
@@ -487,7 +487,7 @@ https://gofile.io/*
 - SPA route ごとの settle reclassification 欠落
 - body 全体の status code text による ATTENTION / RATE_LIMITED 誤分類
 
-### v1.2.0 以降の安全性修正
+### v1.2.1 で修正
 
 - reload 前の同期分類応答を navigation / classification identity で失効させる。
 - SPA route change 時点で存在していた not-found gate を stale structure として記録し、その内部 mutation を新 route の fresh DEAD 証拠にしない。
@@ -553,36 +553,35 @@ GitHub Tag / GitHub Release を正式な Version 境界として使用します�
 ```text
 Tag: v<major>.<minor>.<patch>
 Title: Gofile Tab Manager v<major>.<minor>.<patch>
+Release commit: release: publish v<major>.<minor>.<patch>
 ```
 
-現在は build 工程・配布バイナリ・Release Asset 生成処理を持ちません。GitHub が自動提供する Source code archive が配布元です。
+build 工程・配布バイナリ・Release Asset 生成処理はありません。GitHub が自動提供する Source code archive が配布元です。
 
-### 手動リリース手順
+### 自動リリース手順
 
-1. Release 対象コードを確定。
-2. `manifest.json` と `shared/constants.js` の Version 一致を確認。
-3. `npm test` と GitHub Actions を確認。
-4. 実ブラウザ smoke test を実施し、Chrome / Edge の正確な Version、対象 DOM、操作順を記録。
-5. README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS / LICENSE を同期。
-6. Release 対象の最終 commit を確定。
-7. 最終 commit に `vX.Y.Z` tag を作成。
-8. GitHub Release をその tag から作成。
-9. Title を `Gofile Tab Manager vX.Y.Z` とする。
-10. CHANGELOG と一致する Release notes を設定。
-11. Pre-release ではない正式 Release として公開。
-12. 公開後、tag / date / source archive / README / License を確認。
+1. Release 対象コードと実ブラウザ検証を確定。
+2. `manifest.json` と `shared/constants.js` の Version を一致させる。
+3. README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS を同期。
+4. `docs/releases/vX.Y.Z.md` を作成。
+5. main へ **`release: publish vX.Y.Z`** という完全一致の commit message で release commit を push。
+6. `.github/workflows/publish-release.yml` が Version 一致と release notes の存在を検証し、`npm test` を実行。
+7. workflow が `vX.Y.Z` annotated tag を作成し、GitHub Release `Gofile Tab Manager vX.Y.Z` を公開。
+8. 通常の Tests workflow で全 JavaScript の `node --check` と `npm test` も確認。
+9. 公開後、tag / Release / source archive / README / License を確認。
 
-### v1.2.0 release checklist
+### v1.2.1 release checklist
 
-- [x] `manifest.json` = `1.2.0`
-- [x] `shared/constants.js` = `1.2.0`
-- [x] GitHub Actions CI 導入済み
-- [x] Automated tests success
-- [x] 2026-09-27 real-browser verification: no defects found
-- [x] README / CHANGELOG synchronized
-- [x] `v1.2.0` tag created
-- [x] GitHub Release `Gofile Tab Manager v1.2.0` published
-- [ ] Chrome / Edge の正確な Version 番号を記録（次回 release では必須）
+- [x] `manifest.json` = `1.2.1`
+- [x] `shared/constants.js` = `1.2.1`
+- [x] safety-fix CI: 45 tests / 45 passed / 0 failed
+- [x] 2026-09-27 real-browser / real-environment verification completed
+- [x] README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS synchronized
+- [x] `docs/releases/v1.2.1.md` prepared
+- [ ] Publish Release workflow success
+- [ ] `v1.2.1` tag created
+- [ ] GitHub Release `Gofile Tab Manager v1.2.1` published
+- [ ] Chrome / Edge の正確な Version 番号を記録（今回の確認では未提供）
 
 
 ## License

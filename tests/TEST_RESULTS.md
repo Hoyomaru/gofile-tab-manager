@@ -1,4 +1,4 @@
-# Gofile Tab Manager v1.2.0 — Test Results
+# Gofile Tab Manager v1.2.1 — Test Results
 
 ## Automated regression tests
 
@@ -17,7 +17,7 @@ npm test
 - `tests/popup-features.test.js` — Popup の再判定・詳細ステータス表示の配線
 - `tests/auto-close-pause.test.js` — 自動クローズ一時停止の destructive boundary guard
 
-GitHub Actions の Node.js 24 ジョブで、全 JavaScript の `node --check` と `npm test` を実行します。v1.2.0 リリース時点の regression suite は成功済みです。
+GitHub Actions の Node.js 24 ジョブで、全 JavaScript の `node --check` と `npm test` を実行します。v1.2.1 の safety-fix PR 最終 CI は **45 tests / 45 passed / 0 failed** です。release commit でも workflow が `npm test` を再実行します。
 
 ### v1.0.0 historical result
 
@@ -29,7 +29,7 @@ node --test tests/regression.test.js
 Node.js v24.19.0
 ```
 
-この 21 件は v1.2.0 でも削除せず維持し、安全性・Popup・pause・sort/shortcut テストを追加しています。
+この 21 件は v1.2.1 でも削除せず維持し、安全性・Popup・pause・sort/shortcut テストを追加しています。
 
 ## Automated test coverage
 
@@ -57,6 +57,14 @@ Node.js v24.19.0
 - **構成**: host permission を `https://gofile.io/*` に限定する。
 
 ## Real-browser verification — 2026-09-27
+
+### v1.2.1 release candidate
+
+v1.2.1 リリース候補について、ユーザーの実環境確認が完了しています。**不具合報告なし**です。
+
+今回の確認について正確な Chrome / Edge Version 番号は提供されていないため、最小対応 Version は引き続き未定義です。バージョン番号や個別操作の詳細は未記録として扱い、推測で補完しません。
+
+### v1.2.0 historical verification
 
 v1.2.0 リリース候補について実ブラウザ検証を実施し、**不具合なし**を確認しました。
 
