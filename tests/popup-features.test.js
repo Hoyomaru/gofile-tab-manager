@@ -25,12 +25,35 @@ test('shared message types expose popup reclassification', () => {
   );
 });
 
+test('popup makes sorting the primary action and uses human-readable status labels', () => {
+  const html = source('popup.html');
+  assert.match(html, /id="sort-button" class="primary wide"[^>]*>Gofileタブを並び替え</);
+  assert.match(html, />正常</);
+  assert.match(html, />アクセス制限</);
+  assert.match(html, />読み込み中</);
+  assert.match(html, />要確認</);
+  assert.match(html, />保護</);
+  assert.match(html, />最近自動で閉じたタブ</);
+  assert.doesNotMatch(html, />NORMAL</);
+  assert.doesNotMatch(html, />RATE_LIMITED</);
+  assert.doesNotMatch(html, />LOADING</);
+  assert.doesNotMatch(html, />ATTENTION</);
+  assert.doesNotMatch(html, />PROTECTED</);
+});
+
 test('popup exposes detailed status counters and reclassify control', () => {
   const html = source('popup.html');
   assert.match(html, /id="rate-limited-count"/);
   assert.match(html, /id="loading-count"/);
   assert.match(html, /id="reclassify-button"/);
   assert.match(html, /shared\/url\.js/);
+});
+
+test('popup translates auto-close history reasons for users', () => {
+  const popup = source('popup.js');
+  assert.match(popup, /CLOSE_REASONS/);
+  assert.match(popup, /リンク切れ/);
+  assert.match(popup, /重複/);
 });
 
 test('reclassification reuses the existing mutation-driven classifier', () => {
