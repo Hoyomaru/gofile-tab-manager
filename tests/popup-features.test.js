@@ -25,12 +25,36 @@ test('shared message types expose popup reclassification', () => {
   );
 });
 
-test('popup exposes detailed status counters and reclassify control', () => {
+test('popup makes sort the primary action and keeps detailed status controls', () => {
   const html = source('popup.html');
+  const sortIndex = html.indexOf('id="sort-button"');
+  const stateIndex = html.indexOf('id="window-state-heading"');
+
+  assert.ok(sortIndex >= 0);
+  assert.ok(stateIndex >= 0);
+  assert.ok(sortIndex < stateIndex);
+  assert.match(html, /id="sort-button" class="primary wide"/);
+  assert.match(html, />Gofileタブを並び替え</);
   assert.match(html, /id="rate-limited-count"/);
   assert.match(html, /id="loading-count"/);
   assert.match(html, /id="reclassify-button"/);
+  assert.match(html, /id="pause-button"/);
   assert.match(html, /shared\/url\.js/);
+});
+
+test('popup presents internal states and close reasons in user-facing Japanese', () => {
+  const html = source('popup.html');
+  const popup = source('popup.js');
+
+  assert.match(html, />正常</);
+  assert.match(html, />アクセス制限</);
+  assert.match(html, />読み込み中</);
+  assert.match(html, />要確認</);
+  assert.match(html, />保護</);
+  assert.match(html, />最近自動で閉じたタブ</);
+
+  assert.match(popup, /reason === 'DEAD'.*'リンク切れ'/);
+  assert.match(popup, /reason === 'DUPLICATE'.*'重複'/);
 });
 
 test('reclassification reuses the existing mutation-driven classifier', () => {
