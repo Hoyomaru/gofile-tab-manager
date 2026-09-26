@@ -172,7 +172,7 @@ Popup の **並び替え**を押した時だけ現在ウィンドウを整理し
 - `0`: すでに安全な並び
 - `!`: タブ構成変更などで安全に完了できなかった
 
-ショートカットはChrome / Edgeの拡張機能ショートカット設定から変更できます。
+ショートカットはChromeの `chrome://extensions/shortcuts`、Edgeの `edge://extensions/shortcuts` から変更できます。
 
 ### 6. Recent auto-closed
 
