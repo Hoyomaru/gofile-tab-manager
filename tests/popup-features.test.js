@@ -53,8 +53,8 @@ test('popup presents internal states and close reasons in user-facing Japanese',
   assert.match(html, />保護</);
   assert.match(html, />最近自動で閉じたタブ\s*</);
   assert.match(html, /id="history-count"/);
-  assert.match(popup, /status--success/);
-  assert.match(popup, /status--error/);
+  assert.match(popup, /setStatus\([^\n]+, 'success'\)/);
+  assert.match(popup, /setStatus\([^\n]+, 'error'\)/);
 
   assert.match(popup, /reason === 'DEAD'.*'リンク切れ'/);
   assert.match(popup, /reason === 'DUPLICATE'.*'重複'/);
