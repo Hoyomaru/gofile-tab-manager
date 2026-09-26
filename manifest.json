@@ -41,5 +41,13 @@
       ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "commands": {
+    "sort-current-window": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "現在のウィンドウのGofileタブを並び替え"
+    }
+  }
 }

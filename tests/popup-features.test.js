@@ -78,6 +78,36 @@ test('history exposes count and full truncated title', () => {
   assert.match(popup, /title\.title = title\.textContent/);
 });
 
+test('manifest exposes a customizable shortcut for the primary sort action', () => {
+  const manifest = JSON.parse(source('manifest.json'));
+  const command = manifest.commands?.['sort-current-window'];
+  assert.ok(command);
+  assert.equal(command.suggested_key?.default, 'Alt+Shift+S');
+  assert.match(command.description, /Gofileタブを並び替え/);
+});
+
+test('sort command does not expand extension permissions or become a global shortcut', () => {
+  const manifest = JSON.parse(source('manifest.json'));
+  assert.deepEqual([...manifest.permissions].sort(), ['storage', 'tabs']);
+  assert.deepEqual(manifest.host_permissions, ['https://gofile.io/*']);
+  const command = manifest.commands?.['sort-current-window'];
+  assert.ok(command);
+  assert.equal(command.global, undefined);
+  assert.equal(command.suggested_key?.default, 'Alt+Shift+S');
+});
+
+test('keyboard shortcut reuses the existing safe current-window sorter', () => {
+  const background = source('background.js');
+  const handlerAt = background.indexOf("chrome.commands?.onCommand?.addListener");
+  assert.ok(handlerAt > 0);
+  const handler = background.slice(handlerAt);
+  assert.match(handler, /command !== 'sort-current-window'/);
+  assert.match(background, /async function sortLastFocusedWindowFromShortcut\(\)/);
+  assert.match(background, /chrome\.tabs\.query\(\{ active: true, lastFocusedWindow: true \}\)/);
+  assert.match(background, /const result = await sortWindowOnce\(windowId\)/);
+  assert.match(background, /result\.aborted \? '!' : \(result\.changed \? '✓' : '0'\)/);
+});
+
 test('reclassification reuses the existing mutation-driven classifier', () => {
   const helper = source('reclassify.js');
   assert.match(helper, /REQUEST_RECLASSIFICATION/);
