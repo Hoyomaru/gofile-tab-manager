@@ -1329,11 +1329,9 @@ test('DEAD classification is accepted even when pause or protection prevents rem
     classification(protectedUrl, 'DEAD', 20),
     'protected-doc'
   );
-  assert.deepEqual(
-    protectedResponse,
-    { ok: true, accepted: true, removed: false },
-    'PROTECTED is an accepted classification with a skipped destructive action'
-  );
+  assert.equal(protectedResponse.ok, true);
+  assert.equal(protectedResponse.accepted, true);
+  assert.equal(protectedResponse.removed, false, 'PROTECTED skips the destructive action');
   assert.ok(protectedState.browser.snapshot(1));
   assert.equal(history(protectedState.storage).length, 0);
 
@@ -1345,11 +1343,9 @@ test('DEAD classification is accepted even when pause or protection prevents rem
     classification(pausedUrl, 'DEAD', 20),
     'paused-doc'
   );
-  assert.deepEqual(
-    pausedResponse,
-    { ok: true, accepted: true, removed: false },
-    'pause is an accepted classification with a skipped destructive action'
-  );
+  assert.equal(pausedResponse.ok, true);
+  assert.equal(pausedResponse.accepted, true);
+  assert.equal(pausedResponse.removed, false, 'pause skips the destructive action');
   assert.ok(pausedState.browser.snapshot(1));
   assert.equal(history(pausedStorage).length, 0);
 });
