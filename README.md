@@ -303,6 +303,19 @@ gofile-tab-manager/
 └─ docs/ARCHITECTURE.md
 ```
 
+## ショートカット実機確認
+
+Release候補では、Popupを閉じた状態で次を確認します。
+
+1. Gofileタブを複数開き、非Gofile / NORMAL / その他Gofileが混在する状態を作る
+2. **Alt+Shift+S** を押す
+3. Popupの **並び替え** と同じ順序になることを確認する
+4. 並び替えが発生した場合は拡張アイコンに `✓` が短時間表示されること
+5. もう一度押し、変更不要なら `0` が短時間表示されること
+6. 並び替え中にタブ構成を変え、安全中止時に `!` が表示されること
+7. pinned / groupedタブがPopup実行時と同じく保護されること
+8. `chrome://extensions/shortcuts` または `edge://extensions/shortcuts` で割り当て変更が反映されること
+
 ## テスト
 
 ```bash
