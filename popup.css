@@ -15,7 +15,7 @@ body {
 }
 
 h1 {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   font-size: 20px;
 }
 
@@ -49,7 +49,6 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 14px;
 }
 
 .actions .wide {
@@ -80,6 +79,11 @@ h2 {
 .secondary {
   background: ButtonFace;
   color: ButtonText;
+}
+
+#sort-button {
+  padding-block: 12px;
+  font-size: 14px;
 }
 
 .primary:disabled,
