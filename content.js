@@ -15,6 +15,7 @@
   let routeStartedAt = Date.now();
   let routeAwaitingRender = false;
   let freshDeadSignalGeneration = -1;
+  let staleDeadSignalNodes = new Set();
   let debounceHandle = null;
   let settleHandle = null;
   let routePollHandle = null;
@@ -156,21 +157,42 @@
   }
 
   function isDeadHeadingNode(node) {
-    for (let current = node; current; current = current.parentElement || current.parentNode) {
-      if (matchesSelectorSafe(current, 'h1') && isInsidePageRoot(current) && isVisible(current)) {
-        return true;
-      }
-    }
-    return false;
+    return Boolean(node) &&
+      matchesSelectorSafe(node, 'h1') &&
+      isInsidePageRoot(node) &&
+      isVisible(node);
   }
 
   function isTitleNode(node) {
-    for (let current = node; current; current = current.parentElement || current.parentNode) {
-      if (matchesSelectorSafe(current, 'title')) {
-        return true;
+    return Boolean(node) && matchesSelectorSafe(node, 'title');
+  }
+
+  function captureCurrentDeadSignalNodes() {
+    const stale = new Set();
+    for (const selector of Signatures.ERROR_CONTAINER_SELECTORS) {
+      for (const root of querySelectorAllSafe(selector)) {
+        stale.add(root);
+        for (const headingSelector of Signatures.DEAD_HEADING_SELECTORS) {
+          for (const heading of querySelectorAllSafe(headingSelector)) {
+            if (isDescendantOf(heading, root)) {
+              stale.add(heading);
+            }
+          }
+        }
       }
     }
-    return false;
+    staleDeadSignalNodes = stale;
+  }
+
+  function hasFreshDeadHeading(root) {
+    return Signatures.DEAD_HEADING_SELECTORS.some((selector) =>
+      querySelectorAllSafe(selector).some((heading) =>
+        isDescendantOf(heading, root) &&
+        !staleDeadSignalNodes.has(heading) &&
+        isVisible(heading) &&
+        Signatures.DEAD_HEADING_TEXT.test(normalizedText(heading))
+      )
+    );
   }
 
   function hasDeadErrorContainerSignal() {
@@ -186,6 +208,35 @@
     );
   }
 
+  function hasFreshDeadErrorContainerSignal() {
+    const pageTitle = (document.title || '').replace(/\s+/g, ' ').trim();
+    if (!Signatures.DEAD_PAGE_TITLE.test(pageTitle)) {
+      return false;
+    }
+
+    return Signatures.ERROR_CONTAINER_SELECTORS.some((selector) =>
+      querySelectorAllSafe(selector).some((root) =>
+        isVisible(root) &&
+        ((!staleDeadSignalNodes.has(root) && hasVisibleDeadHeading(root)) ||
+         hasFreshDeadHeading(root))
+      )
+    );
+  }
+
+  function exactMutationNode(record, predicate) {
+    if (record.type === 'attributes' && predicate(record.target)) {
+      return record.target;
+    }
+    if (record.type !== 'characterData') {
+      return null;
+    }
+    if (predicate(record.target)) {
+      return record.target;
+    }
+    const parent = record.target?.parentElement || record.target?.parentNode || null;
+    return predicate(parent) ? parent : null;
+  }
+
   function mutationTouchesDeadSignal(record) {
     const addedNodes = [...(record.addedNodes || [])];
     const addedDeadStructure = addedNodes.some((node) => {
@@ -198,7 +249,11 @@
       } catch {
         // An unusual DOM node may not implement querySelectorAll.
       }
-      if (roots.some((root) => isInsidePageRoot(root) && hasVisibleDeadHeading(root))) {
+      if (roots.some((root) =>
+        !staleDeadSignalNodes.has(root) &&
+        isInsidePageRoot(root) &&
+        hasVisibleDeadHeading(root)
+      )) {
         return true;
       }
 
@@ -212,6 +267,7 @@
         // An unusual DOM node may not implement querySelectorAll.
       }
       return headings.some((heading) =>
+        !staleDeadSignalNodes.has(heading) &&
         isInsidePageRoot(heading) &&
         isVisible(heading) &&
         Signatures.DEAD_HEADING_TEXT.test(normalizedText(heading)) &&
@@ -222,11 +278,21 @@
       return true;
     }
 
-    // Text/visibility changes to the exact gate heading or page title can
-    // complete a staged render. A mutation on body or an existing gate's
-    // arbitrary child is not fresh evidence for the current route.
-    if ((isDeadHeadingNode(record.target) || isTitleNode(record.target)) &&
+    // Only changes to a gate node created for the current route count as fresh
+    // evidence. Mutations inside a heading that survived the previous SPA
+    // route are deliberately ignored, including text/attribute changes.
+    const changedHeading = exactMutationNode(record, isDeadHeadingNode);
+    if (changedHeading &&
+        !staleDeadSignalNodes.has(changedHeading) &&
         hasDeadErrorContainerSignal()) {
+      return true;
+    }
+
+    // The title may complete a staged render, but only when the current route
+    // already owns a fresh gate structure. An old mounted gate plus a new title
+    // is not enough to classify the new route as DEAD.
+    if (exactMutationNode(record, isTitleNode) &&
+        hasFreshDeadErrorContainerSignal()) {
       return true;
     }
     return false;
@@ -343,7 +409,9 @@
       documentGeneration: routeGeneration,
       observedAt: Date.now()
     }).then((response) => {
-      if (response && response.ok === false) {
+      const explicitlyRejected = response?.accepted === false ||
+        (response?.accepted === undefined && response?.ok === false);
+      if (explicitlyRejected) {
         lastSentKey = '';
       }
     }).catch(() => {
@@ -413,6 +481,10 @@
     const sameCanonical = Boolean(previousCanonical && nextCanonical && previousCanonical === nextCanonical);
     const hadFreshDeadSignal = freshDeadSignalGeneration === previousGeneration ||
       (previousGeneration === 0 && hasDeadErrorContainerSignal());
+
+    if (!sameCanonical) {
+      captureCurrentDeadSignalNodes();
+    }
 
     lastObservedHref = location.href;
     routeGeneration += 1;
