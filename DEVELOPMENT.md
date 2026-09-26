@@ -9,19 +9,19 @@ Gofile Tab Manager の開発・保守・AI 引き継ぎ用ドキュメントで�
 | 項目 | 状態 |
 |---|---|
 | Manifest version | 3 |
-| アプリ Version | `1.1.0` |
-| 安定版 | `v1.1.0` |
-| v1.1.0 リリース日 | 2026-09-15 |
-| Release / Tag 識別子 | `v1.1.0` |
+| アプリ Version | `1.2.0` |
+| 安定版 | `v1.2.0` |
+| v1.2.0 リリース日 | 2026-09-27 |
+| Release / Tag 識別子 | `v1.2.0` |
 | GitHub Release 運用 | 手動公開 |
 | Version 定義 | `manifest.json` / `shared/constants.js` |
 | default branch | `main` |
-| GitHub Actions | 導入済み。Node.js 24 / `npm test` |
-| 実ブラウザ検証 | 2026-09-15 実施、不具合なし |
+| GitHub Actions | 導入済み。Node.js 24 / `node --check` / `npm test` |
+| 実ブラウザ検証 | 2026-09-27 実施、不具合なし |
 | 最小対応ブラウザ Version | 未定義 |
 | License | MIT License |
 
-v1.1.0 は v1.0.0 の destructive safety 方針を維持しつつ、content lifecycle 修正、CI、Popup の再判定 / 詳細状態表示、自動クローズ一時停止 / 再開を追加したリリースです。
+v1.2.0 は v1.1.0 の destructive safety 方針を維持しつつ、Popup の並び替えを primary action へ整理し、同じ安全な sort 経路を `Alt+Shift+S` から実行できるようにしたリリースです。
 
 ## 現在の主要機能
 
@@ -39,7 +39,7 @@ v1.1.0 は v1.0.0 の destructive safety 方針を維持しつつ、content life
 
 ## 実機検証状況
 
-2026-09-15 に v1.1.0 リリース候補の実ブラウザ検証を実施し、不具合なしを確認しています。
+2026-09-27 に v1.2.0 リリース候補の実ブラウザ検証を実施し、不具合なしを確認しています。
 
 確認内容は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を正としてください。正確な Chrome / Edge Version 番号は記録していないため、最小対応 Version は未定義のままです。
 
@@ -101,7 +101,7 @@ host permission を Gofile 以外へ広げないでください。
 主な定数:
 
 ```text
-VERSION = 1.1.0
+VERSION = 1.2.0
 HISTORY_LIMIT = 50
 CLASSIFY_DEBOUNCE_MS = 800
 CLASSIFY_SETTLE_MS = 12000
@@ -290,6 +290,7 @@ content script の報告をそのまま信用せず、次を再確認します�
 - routeGeneration
 - observedAt
 - classificationRevision
+- background の `REQUEST_CLASSIFICATION` は問い合わせ開始時の canonical URL / navigationVersion / classificationRevision を保持し、応答適用前に一致を再確認
 
 ### `closeTabSafely()`
 
@@ -326,7 +327,7 @@ Chromium API に conditional remove はないため、最終 `tabs.get()` と `t
 
 ### Close History
 
-`closeHistory` は local storage に最大 50 件保存します。
+`closeHistory` は local storage に最大 50 件保存します。保存 URL は managed canonical URL のみで、元 URL の query / fragment は保存しません。
 
 user-visible close を storage latency で待たせない設計です。
 
@@ -486,6 +487,13 @@ https://gofile.io/*
 - SPA route ごとの settle reclassification 欠落
 - body 全体の status code text による ATTENTION / RATE_LIMITED 誤分類
 
+### v1.2.0 以降の安全性修正
+
+- reload 前の同期分類応答を navigation / classification identity で失効させる。
+- SPA route change 時点で存在していた not-found gate を stale structure として記録し、その内部 mutation を新 route の fresh DEAD 証拠にしない。
+- classification の `accepted` と destructive action の `removed` を分離する。
+- Close History へ保存する URL は canonical URL に限定し、query / fragment を破棄する。
+
 ## テスト
 
 ```bash
@@ -499,6 +507,7 @@ GitHub Actions:
 - `main` push
 - `main` 向け pull request
 - Node.js 24
+- 全 JavaScript の `node --check`
 - `npm test`
 
 テスト詳細は [tests/TEST_RESULTS.md](tests/TEST_RESULTS.md) を参照してください。
@@ -553,7 +562,7 @@ Title: Gofile Tab Manager v<major>.<minor>.<patch>
 1. Release 対象コードを確定。
 2. `manifest.json` と `shared/constants.js` の Version 一致を確認。
 3. `npm test` と GitHub Actions を確認。
-4. 実ブラウザ smoke test を実施。
+4. 実ブラウザ smoke test を実施し、Chrome / Edge の正確な Version、対象 DOM、操作順を記録。
 5. README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS / LICENSE を同期。
 6. Release 対象の最終 commit を確定。
 7. 最終 commit に `vX.Y.Z` tag を作成。
@@ -563,17 +572,18 @@ Title: Gofile Tab Manager v<major>.<minor>.<patch>
 11. Pre-release ではない正式 Release として公開。
 12. 公開後、tag / date / source archive / README / License を確認。
 
-### v1.1.0 release checklist
+### v1.2.0 release checklist
 
-- [x] `manifest.json` = `1.1.0`
-- [x] `shared/constants.js` = `1.1.0`
+- [x] `manifest.json` = `1.2.0`
+- [x] `shared/constants.js` = `1.2.0`
 - [x] GitHub Actions CI 導入済み
 - [x] Automated tests success
-- [x] 2026-09-15 real-browser verification: no defects found
-- [x] README / DEVELOPMENT / CHANGELOG / ARCHITECTURE / TEST_RESULTS synchronized
-- [x] MIT License added (`LICENSE`, `package.json`, docs)
-- [ ] `v1.1.0` tag created
-- [ ] GitHub Release `Gofile Tab Manager v1.1.0` published
+- [x] 2026-09-27 real-browser verification: no defects found
+- [x] README / CHANGELOG synchronized
+- [x] `v1.2.0` tag created
+- [x] GitHub Release `Gofile Tab Manager v1.2.0` published
+- [ ] Chrome / Edge の正確な Version 番号を記録（次回 release では必須）
+
 
 ## License
 
