@@ -52,6 +52,12 @@
     }
   }
 
+  function formatCloseReason(reason) {
+    if (reason === 'DEAD') return 'リンク切れ';
+    if (reason === 'DUPLICATE') return '重複';
+    return reason || '自動クローズ';
+  }
+
   function historyRow(item) {
     const row = document.createElement('article');
     row.className = 'history-item';
@@ -60,7 +66,7 @@
     title.textContent = item.title || item.canonicalUrl || item.url;
     const meta = document.createElement('div');
     meta.className = 'history-meta';
-    meta.textContent = `${item.reason} · ${formatDate(item.closedAt)}`;
+    meta.textContent = `${formatCloseReason(item.reason)} · ${formatDate(item.closedAt)}`;
     const reopen = document.createElement('button');
     reopen.type = 'button';
     reopen.textContent = '再オープン';
