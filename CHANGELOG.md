@@ -6,10 +6,34 @@
 
 ## [Unreleased]
 
+次回Release向けの変更はここへ記録します。
+
+## [1.2.0] - 2026-09-27
+
+並び替えを中心操作として分かりやすくし、同じ安全な並び替えをkeyboard shortcutからも実行できるbackward-compatible feature releaseです。
+
 ### Added
 
-- 現在ウィンドウの **Gofileタブを並び替え** を既定の `Alt+Shift+S` から実行できる keyboard command を追加。Popupと同じ安全な並び替え処理を再利用し、結果を拡張アイコンのバッジへ短時間表示。
-- shortcut配線と既存 `sortWindowOnce()` 再利用を固定する回帰テストを追加。
+- 現在ウィンドウの **Gofileタブを並び替え** を既定の `Alt+Shift+S` から実行できるkeyboard commandを追加。
+- shortcut結果を拡張アイコンのbadgeへ短時間表示（`✓`: 並び替え実行 / `0`: 変更不要 / `!`: 安全中止・error）。
+- shortcut配線が既存の安全な `sortWindowOnce()` を再利用し、権限を増やさないことを固定する回帰テストを追加。
+
+### Changed
+
+- Popupの最も頻繁に使う操作を **Gofileタブを並び替え** としてprimary/full-width化。
+- **再判定** と **自動クローズ一時停止** をsecondary actionとして整理。
+- 状態表示を「正常 / その他Gofile / アクセス制限 / 読み込み中 / 要確認 / 保護」など人間向けの表現へ整理。
+- Recent auto-closedの理由表示を「リンク切れ / 重複」へ改善。
+
+### Fixed
+
+- 並び替えの実行中・成功・変更なし・安全中止/errorのfeedbackを強化。
+- Popupのstatus/live region、button label、履歴件数などaccessibilityと長い表示の回帰を改善。
+
+### Validation
+
+- GitHub ActionsのNode regression suiteをmainへのmerge前後でPASS。
+- 2026-09-27に実ブラウザでPopup並び替え、`Alt+Shift+S`、badge feedback、pinned/grouped tab保護を確認。
 
 ## [1.1.0] - 2026-09-15
 

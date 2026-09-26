@@ -1,0 +1,71 @@
+name: Publish Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: "${{ startsWith(github.event.head_commit.message, 'release: publish v') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python - <<'PY'
+          import json, re
+          from pathlib import Path
+          manifest = json.loads(Path('manifest.json').read_text(encoding='utf-8'))
+          constants = Path('shared/constants.js').read_text(encoding='utf-8')
+          m = re.search(r"VERSION:\s*'([^']+)'", constants)
+          if not m or manifest['version'] != m.group(1):
+              raise SystemExit('manifest/constants version mismatch')
+          print(manifest['version'])
+          PY
+          )"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          test "${{ github.event.head_commit.message }}" = "release: publish v$VERSION"
+          test -f "docs/releases/v$VERSION.md"
+      - name: Validate release source
+        run: npm test
+      - name: Create or verify tag
+        env:
+          VERSION: "${{ steps.version.outputs.version }}"
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          REMOTE_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+          if [ -z "$REMOTE_SHA" ]; then REMOTE_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}')"; fi
+          if [ -n "$REMOTE_SHA" ]; then
+            test "$REMOTE_SHA" = "$GITHUB_SHA"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" "$GITHUB_SHA" -m "Gofile Tab Manager $TAG"
+            git push origin "$TAG"
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          VERSION: "${{ steps.version.outputs.version }}"
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; keeping existing release."
+          else
+            gh release create "$TAG" --verify-tag --title "Gofile Tab Manager $TAG" --notes-file "docs/releases/$TAG.md"
+          fi
+          gh release view "$TAG" --json tagName,isDraft,isPrerelease,url
