@@ -877,7 +877,12 @@ function showShortcutFeedback(text) {
       chrome.action.setBadgeBackgroundColor({ color: '#16803a' });
     }
     setTimeout(() => {
-      chrome.action.setBadgeText({ text: '' }).catch?.(() => {});
+      try {
+        const pending = chrome.action.setBadgeText({ text: '' });
+        pending?.catch?.(() => {});
+      } catch {
+        // Badge cleanup is best-effort only.
+      }
     }, 1800);
   } catch {
     // Shortcut feedback is best-effort only.
