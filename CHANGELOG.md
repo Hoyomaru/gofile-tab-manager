@@ -8,6 +8,18 @@
 
 次回Release向けの変更はここへ記録します。
 
+### Fixed
+
+- reload 前の `REQUEST_CLASSIFICATION` 応答が同一 URL の新文書へ適用されないよう、問い合わせ開始時の navigation / classification identity を応答適用時に再照合。
+- SPA 遷移後に残った旧 not-found gate の `h1` 内部 mutation（子要素・属性・テキスト）を、新 route の fresh `DEAD` 証拠として扱わないよう修正。
+- `TAB_CLASSIFICATION` の「分類受理」と「実際に削除したか」を `accepted` / `removed` で分離し、pause / PROTECTED 中の正常な削除見送りを送信失敗扱いしないよう修正。
+- Close History は managed canonical URL のみ保存し、query / fragment を extension storage に残さないよう変更。
+
+### Validation
+
+- 上記 race、旧 gate mutation、pause / PROTECTED、履歴 URL privacy の regression test を追加。
+- GitHub Actions に全 JavaScript の `node --check` を追加。
+
 ## [1.2.0] - 2026-09-27
 
 並び替えを中心操作として分かりやすくし、同じ安全な並び替えをkeyboard shortcutからも実行できるbackward-compatible feature releaseです。

@@ -1227,3 +1227,147 @@ test('close history survives local storage failures, restart recovery, concurren
   assert.equal(history(storage)[0].sourceTabId, 54);
   assert.equal(history(storage).at(-1).sourceTabId, 5);
 });
+
+
+test('old not-found heading mutations after SPA navigation do not become fresh DEAD evidence', async () => {
+  const urlA = 'https://gofile.io/d/StaleGateA';
+  const urlB = 'https://gofile.io/d/StaleGateB';
+  let oldDom;
+  const content = contentOnly(urlA, (document) => {
+    oldDom = appendNotFoundGate(document);
+  });
+
+  content.location.href = urlB;
+  content.runRoutePoll();
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD');
+
+  const oldHeading = oldDom.gate.querySelector('h1');
+  const child = new DomNode(content.document, 'span', {}, '');
+  oldHeading.appendChild(child);
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD', 'child insertion in the old heading is stale');
+
+  child.setAttribute('class', 'updated');
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD', 'old-heading child attributes are stale');
+
+  oldHeading.setAttribute('class', 'rerendered');
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD', 'old heading attributes are stale');
+
+  oldHeading.textContent = 'This content does not exist';
+  await settle(10);
+  assert.notEqual((await content.requestClassification()).state, 'DEAD', 'old heading text changes are stale');
+
+  oldDom.page.removeChild(oldDom.root);
+  const newRoot = new DomNode(content.document, 'div', { id: 'fm-root' });
+  const newGate = new DomNode(content.document, 'div', { class: 'gate' });
+  newGate.appendChild(new DomNode(content.document, 'h1', {}, 'This content does not exist'));
+  newGate.appendChild(new DomNode(content.document, 'p', {}, 'The content you are looking for could not be found.'));
+  newRoot.appendChild(newGate);
+  oldDom.page.appendChild(newRoot);
+  await settle(10);
+
+  assert.equal((await content.requestClassification()).state, 'DEAD', 'a newly inserted gate is fresh evidence');
+});
+
+test('a delayed classification response from the pre-reload document cannot close the reloaded tab', async () => {
+  const url = 'https://gofile.io/d/ReloadIdentity';
+  const state = await createBackground([tab(1, url)]);
+
+  let releaseOld;
+  let releaseNew;
+  let oldRequestedResolve;
+  let newRequestedResolve;
+  const oldRequested = new Promise((resolve) => { oldRequestedResolve = resolve; });
+  const newRequested = new Promise((resolve) => { newRequestedResolve = resolve; });
+  const oldGate = new Promise((resolve) => { releaseOld = resolve; });
+  const newGate = new Promise((resolve) => { releaseNew = resolve; });
+  let requestCount = 0;
+
+  state.browser.setContentResponder(1, async (message) => {
+    assert.equal(message.type, 'REQUEST_CLASSIFICATION');
+    requestCount += 1;
+    if (requestCount === 1) {
+      oldRequestedResolve();
+      await oldGate;
+      return { ok: true, ...classification(url, 'DEAD', 20) };
+    }
+    newRequestedResolve();
+    await newGate;
+    return { ok: true, ...classification(url, 'NORMAL', 30) };
+  });
+
+  state.browser.emitUpdated(1, { status: 'complete' });
+  await oldRequested;
+
+  state.browser.updateTab(1, { status: 'loading', pendingUrl: '' });
+  state.browser.emitUpdated(1, { status: 'loading' });
+  await settle(10);
+
+  state.browser.updateTab(1, { status: 'complete', pendingUrl: '' });
+  state.browser.emitUpdated(1, { status: 'complete' });
+  await newRequested;
+
+  releaseOld();
+  await settle(30);
+  assert.ok(state.browser.snapshot(1), 'the old document response must be rejected after reload');
+  assert.equal(history(state.storage).length, 0);
+
+  releaseNew();
+  await settle(30);
+  assert.ok(state.browser.snapshot(1));
+  assert.equal(history(state.storage).length, 0);
+});
+
+test('DEAD classification is accepted even when pause or protection prevents removal', async () => {
+  const protectedUrl = 'https://gofile.io/d/AcceptedProtected';
+  const protectedState = await createBackground([tab(1, protectedUrl, { pinned: true })]);
+  const protectedResponse = await protectedState.browser.dispatchTabMessage(
+    1,
+    classification(protectedUrl, 'DEAD', 20),
+    'protected-doc'
+  );
+  assert.equal(protectedResponse.ok, true);
+  assert.equal(protectedResponse.accepted, true);
+  assert.equal(protectedResponse.removed, false, 'PROTECTED skips the destructive action');
+  assert.ok(protectedState.browser.snapshot(1));
+  assert.equal(history(protectedState.storage).length, 0);
+
+  const pausedUrl = 'https://gofile.io/d/AcceptedPaused';
+  const pausedStorage = createStorage({ local: { autoClosePaused: true } });
+  const pausedState = await createBackground([tab(1, pausedUrl)], pausedStorage);
+  const pausedResponse = await pausedState.browser.dispatchTabMessage(
+    1,
+    classification(pausedUrl, 'DEAD', 20),
+    'paused-doc'
+  );
+  assert.equal(pausedResponse.ok, true);
+  assert.equal(pausedResponse.accepted, true);
+  assert.equal(pausedResponse.removed, false, 'pause skips the destructive action');
+  assert.ok(pausedState.browser.snapshot(1));
+  assert.equal(history(pausedStorage).length, 0);
+});
+
+test('Close History strips query and fragment values before persistence', async () => {
+  const url = 'https://gofile.io/d/HistoryPrivacy?shareSecret=do-not-store#private-fragment';
+  const canonicalUrl = 'https://gofile.io/d/HistoryPrivacy';
+  const storage = createStorage();
+  const state = await createBackground([tab(1, url)], storage);
+
+  const response = await state.browser.dispatchTabMessage(
+    1,
+    classification(url, 'DEAD', 20),
+    'history-doc'
+  );
+  assert.equal(response.ok, true);
+  assert.equal(response.removed, true);
+
+  const entries = history(storage);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].url, canonicalUrl);
+  assert.equal(entries[0].canonicalUrl, canonicalUrl);
+  assert.equal(JSON.stringify(entries).includes('do-not-store'), false);
+  assert.equal(JSON.stringify(entries).includes('private-fragment'), false);
+});

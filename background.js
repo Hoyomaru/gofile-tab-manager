@@ -457,7 +457,10 @@ async function closeTabSafely(tab, reason, expectedCanonicalUrl, guard = null) {
     }
 
     historyEntry = {
-      url: live.url,
+      // Close History only needs the managed canonical URL. Query strings and
+      // fragments may contain share parameters or other sensitive values, so
+      // never persist them in extension storage.
+      url: expectedCanonicalUrl,
       canonicalUrl: expectedCanonicalUrl,
       reason,
       closedAt: Date.now(),
@@ -532,54 +535,60 @@ async function handleDeadClassification(candidate) {
   }
 }
 
-async function applyClassification(tab, message, sender = null, reconcileAfter = true) {
+async function applyClassification(tab, message, sender = null, reconcileAfter = true, expectedSync = null) {
   if (!Number.isInteger(tab?.id)) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const messageCanonical = Url.canonicalizeGofileUrl(message?.url || '');
   if (!messageCanonical || messageCanonical !== message?.canonicalUrl) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   let live;
   try {
     live = await chrome.tabs.get(tab.id);
   } catch {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const liveCanonical = Url.canonicalizeGofileUrl(live.url || '');
   if (!liveCanonical || liveCanonical !== messageCanonical || isTabNavigationInProgress(live)) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const documentId = typeof sender?.documentId === 'string' ? sender.documentId : null;
   const routeGeneration = Number.isInteger(message.documentGeneration) ? message.documentGeneration : 0;
   const routeKey = routeGenerationKey(live.id, documentId);
   if (routeGeneration < (latestRouteGenerations.get(routeKey) || 0)) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const previous = tabMeta.get(live.id);
+  if (expectedSync &&
+      (previous?.canonicalUrl !== expectedSync.canonicalUrl ||
+       previous?.navigationVersion !== expectedSync.navigationVersion ||
+       previous?.classificationRevision !== expectedSync.classificationRevision)) {
+    return { accepted: false, removed: false };
+  }
   if (previous?.documentId && documentId && previous.documentId !== documentId) {
-    return false;
+    return { accepted: false, removed: false };
   }
   if (previous?.navigationVersion && previous.canonicalUrl === liveCanonical &&
       routeGeneration < (previous.routeGeneration || 0)) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const observedAt = Number.isFinite(message.observedAt) ? message.observedAt : Date.now();
   if (previous?.canonicalUrl === liveCanonical &&
       routeGeneration === (previous.routeGeneration || 0) &&
       Number.isFinite(previous.observedAt) && observedAt < previous.observedAt) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const state = sanitizeState(message.state);
   if (live.status === 'loading' && state !== STATES.LOADING) {
-    return false;
+    return { accepted: false, removed: false };
   }
 
   const revision = nextClassificationRevision(live.id);
@@ -617,13 +626,13 @@ async function applyClassification(tab, message, sender = null, reconcileAfter =
       routeGeneration
     });
     await sessionPersistence;
-    return removed;
+    return { accepted: true, removed };
   }
   await sessionPersistence;
   if (reconcileAfter) {
     await enqueueReconciliation();
   }
-  return true;
+  return { accepted: true, removed: false };
 }
 
 async function synchronizeClassifications(tabs) {
@@ -632,19 +641,33 @@ async function synchronizeClassifications(tabs) {
   );
 
   const responses = await Promise.all(managedTabs.map(async (tab) => {
+    const canonicalUrl = Url.canonicalizeGofileUrl(tab.url || '');
+    const current = tabMeta.get(tab.id);
+    const requestIdentity = current && current.canonicalUrl === canonicalUrl
+      ? {
+          canonicalUrl,
+          navigationVersion: current.navigationVersion,
+          classificationRevision: current.classificationRevision
+        }
+      : null;
+
+    if (!requestIdentity || current.pendingNavigation || isTabNavigationInProgress(tab)) {
+      return { tab, response: null, requestIdentity: null };
+    }
+
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: MESSAGE_TYPES.REQUEST_CLASSIFICATION
       });
-      return { tab, response };
+      return { tab, response, requestIdentity };
     } catch {
-      return { tab, response: null };
+      return { tab, response: null, requestIdentity };
     }
   }));
 
-  for (const { tab, response } of responses) {
-    if (response?.ok && response.state) {
-      await applyClassification(tab, response, null, false);
+  for (const { tab, response, requestIdentity } of responses) {
+    if (response?.ok && response.state && requestIdentity) {
+      await applyClassification(tab, response, null, false, requestIdentity);
     }
   }
 }
@@ -997,8 +1020,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === MESSAGE_TYPES.TAB_CLASSIFICATION) {
-      const accepted = await applyClassification(sender.tab, message, sender, true);
-      sendResponse({ ok: accepted });
+      const result = await applyClassification(sender.tab, message, sender, true);
+      sendResponse({
+        ok: result.accepted,
+        accepted: result.accepted,
+        removed: result.removed
+      });
       return;
     }
 

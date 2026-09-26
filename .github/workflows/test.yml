@@ -24,5 +24,8 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Check JavaScript syntax
+        run: find . -type f -name '*.js' -not -path './.git/*' -print0 | xargs -0 -n1 node --check
+
       - name: Run tests
         run: npm test

@@ -1,6 +1,6 @@
 # Architecture
 
-Gofile Tab Manager v1.1.0 のコンポーネント構成、データフロー、状態管理、安全上の設計判断をまとめます。
+Gofile Tab Manager v1.2.0 のコンポーネント構成、データフロー、状態管理、安全上の設計判断をまとめます。
 
 利用者向け情報は [../README.md](../README.md)、開発・保守上の詳細は [../DEVELOPMENT.md](../DEVELOPMENT.md)、テスト状況は [../tests/TEST_RESULTS.md](../tests/TEST_RESULTS.md) を参照してください。
 
@@ -351,7 +351,7 @@ closeHistory
 autoClosePaused
 ```
 
-`closeHistory`:
+`closeHistory`（URL は query / fragment を除いた managed canonical URL のみ保存）:
 
 - durable な auto-close 履歴
 - DEAD / DUPLICATE
@@ -427,6 +427,7 @@ REOPEN_HISTORY_ITEM
 
 - current URL
 - canonical URL
+- background 同期問い合わせ開始時の navigation / classification identity
 - document generation
 - observedAt
 
@@ -539,12 +540,13 @@ Automated:
 
 - GitHub Actions
 - Node.js 24
+- 全 JavaScript の `node --check`
 - `npm test`
 - `tests/*.test.js`
 
 Real browser:
 
-- 2026-09-15 に v1.1.0 release candidate を検証
+- 2026-09-27 に v1.2.0 release candidate を検証
 - 不具合なし
 
 詳細は [../tests/TEST_RESULTS.md](../tests/TEST_RESULTS.md) を参照してください。
