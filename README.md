@@ -31,7 +31,7 @@ v1.1.0 では、分類 lifecycle の安全性修正、GitHub Actions CI、Popup 
 - Popup から現在ウィンドウの Gofile タブを手動で再判定する
 - Popup で `NORMAL` / `RATE_LIMITED` / `LOADING` / `ATTENTION` / `PROTECTED` の状態を確認する
 - 自動クローズをグローバルに一時停止 / 再開する
-- Popup の操作時だけ、現在ウィンドウのタブを安全に並び替える
+- Popup またはキーボードショートカットから、現在ウィンドウのタブを安全に並び替える
 - 自動で閉じたタブを直近 50 件まで保存し、Popup から再オープンする
 
 **429 の自動再試行、自動リロード、Gofile API への独自リクエスト、ダウンロード管理は行いません。**
@@ -166,6 +166,14 @@ Popup の **並び替え**を押した時だけ現在ウィンドウを整理し
 
 各グループ内の相対順序は維持します。PROTECTED は固定 barrier として扱われ、その位置を跨いだ move は行いません。並び替え中にタブ構成や保護状態が変わった場合は古い計画を中止します。
 
+同じ並び替えは既定で **Alt+Shift+S** からも実行できます。ショートカットはPopupと同じ安全な `sortWindowOnce()` 経路を使用し、実行結果を拡張アイコンのバッジへ短時間表示します。
+
+- `✓`: 並び替えを実行
+- `0`: すでに安全な並び
+- `!`: タブ構成変更などで安全に完了できなかった
+
+ショートカットはChrome / Edgeの拡張機能ショートカット設定から変更できます。
+
 ### 6. Recent auto-closed
 
 Popup の **Recent auto-closed** には、自動クローズされた `DEAD` / `DUPLICATE` タブが新しい順に最大 50 件表示されます。
@@ -201,6 +209,7 @@ Popup の **Recent auto-closed** には、自動クローズされた `DEAD` / `
 - **自動クローズ一時停止 / 再開**
 - **再判定**
 - **並び替え**
+- **Alt+Shift+S** で現在ウィンドウを並び替え（割り当て変更可能）
 - Recent auto-closed の **再オープン**
 
 ## データと保存先
@@ -258,6 +267,7 @@ background.js
    ├─ DEAD / duplicate safety guard → tabs.remove
    ├─ pause state
    ├─ Popup要求 → 状態集計 / sort / reopen
+   ├─ commands → 現在windowのsafe sort
    └─ storage.local / storage.session
         ↑
 popup.js ─ runtime / tabs message
