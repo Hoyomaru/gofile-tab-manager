@@ -47,6 +47,7 @@ v1.2.0 では、並び替えをPopupのprimary actionへ整理し、同じ安全
 - pinned タブと tab group 所属タブは `PROTECTED` とし、自動クローズ・重複削除・move の対象にしません
 - 削除直前に実タブの URL・navigation 状態・保護状態・分類世代を再確認します
 - stale な `DEAD` 判定や古い SPA DOM を根拠に削除しないよう、navigation / document generation を追跡します
+- background からの再分類問い合わせも、開始時の navigation / classification identity が変わった応答は破棄します
 - 自動クローズ一時停止中は `DEAD` / `DUPLICATE` の両方を削除しません
 - pause 状態は close 開始時と最終 `tabs.remove()` 直前の両方で再確認します
 - pause 設定を Service Worker 起動時に読めない場合は安全側に倒して停止扱いにします
@@ -178,7 +179,7 @@ Popup の **並び替え**を押した時だけ現在ウィンドウを整理し
 
 Popup の **Recent auto-closed** には、自動クローズされた `DEAD` / `DUPLICATE` タブが新しい順に最大 50 件表示されます。
 
-**再オープン**を押すと保存 URL を新しいタブとして開きます。過去の tab ID は再利用せず、URL も管理対象形式か再検証します。
+**再オープン**を押すと保存 URL を新しいタブとして開きます。Close History には `https://gofile.io/d/<contentId>` の canonical URL だけを保存し、元 URL の query / fragment は保存しません。過去の tab ID は再利用せず、URL も管理対象形式か再検証します。
 
 ## 状態の意味
 
@@ -218,12 +219,12 @@ Popup の **Recent auto-closed** には、自動クローズされた `DEAD` / `
 
 | Storage | Key | 内容 |
 |---|---|---|
-| `chrome.storage.local` | `closeHistory` | 自動クローズ履歴。最大 50 件 |
+| `chrome.storage.local` | `closeHistory` | 自動クローズ履歴。最大 50 件。URL は query / fragment を除いた canonical URL のみ |
 | `chrome.storage.local` | `autoClosePaused` | グローバルな自動クローズ一時停止状態 |
 | `chrome.storage.session` | `tabMeta` | `canonicalUrl` と `firstSeenAt` の簡易メタデータ |
 | `chrome.storage.session` | `pendingCloses` | クローズ処理の復旧用状態 |
 
-認証情報、Gofile の Cookie、Access Token、Password、API Key を本拡張独自の storage へ保存する実装はありません。
+認証情報、Gofile の Cookie、Access Token、Password、API Key を本拡張独自の storage へ保存する実装はありません。Close History でも URL の query / fragment は破棄してから保存します。
 
 ## 再起動・復旧
 
