@@ -2,7 +2,11 @@
   'use strict';
 
   const { Constants, Url } = globalThis.GofileTabManager;
-  const { MESSAGE_TYPES, STATES, STORAGE_KEYS } = Constants;
+  const { MESSAGE_TYPES, STATES, STORAGE_KEYS, CLOSE_REASONS } = Constants;
+  const historyReasonLabels = {
+    [CLOSE_REASONS.DEAD]: 'リンク切れ',
+    [CLOSE_REASONS.DUPLICATE]: '重複'
+  };
   const elements = {
     normal: document.querySelector('#normal-count'),
     other: document.querySelector('#other-count'),
@@ -60,7 +64,8 @@
     title.textContent = item.title || item.canonicalUrl || item.url;
     const meta = document.createElement('div');
     meta.className = 'history-meta';
-    meta.textContent = `${item.reason} · ${formatDate(item.closedAt)}`;
+    const reason = historyReasonLabels[item.reason] || item.reason || '自動クローズ';
+    meta.textContent = `${reason} · ${formatDate(item.closedAt)}`;
     const reopen = document.createElement('button');
     reopen.type = 'button';
     reopen.textContent = '再オープン';
