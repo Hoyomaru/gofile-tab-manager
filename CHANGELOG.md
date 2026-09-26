@@ -6,7 +6,12 @@
 
 ## [Unreleased]
 
-現在、v1.1.0 公開予定内容以外の未リリース変更はありません。
+### Changed
+
+- Popup の最頻操作である「並び替え」を最上位の Primary Action に変更。
+- Popup の状態表示を `NORMAL` / `RATE_LIMITED` / `LOADING` / `ATTENTION` / `PROTECTED` から、利用者向けの日本語ラベルへ変更。内部状態値は変更しない。
+- 自動クローズ履歴の理由表示を `DEAD` / `DUPLICATE` から「リンク切れ」/「重複」へ変更。
+- 履歴見出しを日本語化し、再判定と自動クローズ制御を補助操作として整理。
 
 ## [1.1.0] - 2026-09-15
 
@@ -56,11 +61,6 @@ GitHub Release:
 
 Gofile Tab Manager の初回正式リリースです。
 
-GitHub Release:
-
-- Tag: `v1.0.0`
-- Title: `Gofile Tab Manager v1.0.0`
-
 Chrome / Microsoft Edge（Chromium）向け Manifest V3 拡張として、Gofile の `https://gofile.io/d/<contentId>` タブを安全側に整理する機能を提供しました。
 
 ### Added
@@ -74,32 +74,3 @@ Chrome / Microsoft Edge（Chromium）向け Manifest V3 拡張として、Gofile
 - `chrome.storage.session` を利用した tab metadata / pending close state の保持。
 - Gofile origin の DOM を監視して `NORMAL` / `DEAD` / `RATE_LIMITED` / `LOADING` / `ATTENTION` を分類する content script。
 - Node 標準モジュールだけで実コードを検証する回帰テスト。
-
-### Safety fixes included before release
-
-#### 2026-09-07 — tab lifecycle safety
-
-- pending navigation 中の旧 URL 分類を無効化。
-- navigation version / classification revision / route generation による stale classification 防止。
-- duplicate victim 削除前の survivor 再検証。
-- newer `NORMAL` / `ATTENTION` / `LOADING` 到着時に古い `DEAD` close を無効化。
-- pinned / tab group などの保護状態が await 中に変化した場合、古い削除・sort 計画を中止。
-- replacement tab で同じ canonical URL の `firstSeenAt` だけを継承し、分類状態を `LOADING` へ戻す。
-- Close History の storage failure 再試行、pending close recovery、並行 close 耐性、sort snapshot 再検証を追加。
-
-#### 2026-09-10 — Gofile DEAD detection / close races
-
-- DEAD 判定を広い本文文字列から、`main#page` → `#fm-root` → exact `h1` と `Content not found` title の肯定的 DOM 判定へ限定。
-- 正常 folder / file view の DOM を肯定的な `NORMAL` シグナルとして扱うよう改善。
-- 正常ファイル名、hidden DOM、modal / toast、loading、401 / 403 / 429 / 5xx を DEAD と誤判定しない回帰テストを追加・強化。
-- SPA route change 後に古い not-found DOM を新 route の証拠として扱わない fresh generation 管理を強化。
-- page-world の URL 変更を補足する 250ms route poll を追加。
-- current-route の完全な not-found gate が確定した場合、通常の debounce を待たず分類通知。
-- `tabs.remove()` の開始を tab metadata / pending close intent の session storage 完了待ちにしないよう変更。
-
-### Known limitations
-
-- Chrome / Edge の正確な最小対応バージョンは未定義。
-- Chromium に conditional `tabs.remove()` がないため、最終 `tabs.get()` と `tabs.remove()` の間には残余競合がある。
-- `tabs.remove()` 成功直後、`removed` phase の永続化前に Service Worker が停止した場合、その close は履歴へ復元できない。
-- Gofile の DOM / title 構造が変更された場合、安全側に倒れて自動クローズできなくなる可能性がある。
