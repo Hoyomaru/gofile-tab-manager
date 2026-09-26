@@ -86,6 +86,16 @@ test('manifest exposes a customizable shortcut for the primary sort action', () 
   assert.match(command.description, /Gofileタブを並び替え/);
 });
 
+test('sort command does not expand extension permissions or become a global shortcut', () => {
+  const manifest = JSON.parse(source('manifest.json'));
+  assert.deepEqual([...manifest.permissions].sort(), ['storage', 'tabs']);
+  assert.deepEqual(manifest.host_permissions, ['https://gofile.io/*']);
+  const command = manifest.commands?.['sort-current-window'];
+  assert.ok(command);
+  assert.equal(command.global, undefined);
+  assert.equal(command.suggested_key?.default, 'Alt+Shift+S');
+});
+
 test('keyboard shortcut reuses the existing safe current-window sorter', () => {
   const background = source('background.js');
   const handlerAt = background.indexOf("chrome.commands?.onCommand?.addListener");
