@@ -15,7 +15,7 @@
       <button id="reclassify-button" class="secondary" type="button">再判定</button>
       <button id="pause-button" class="secondary" type="button" aria-pressed="false">自動クローズ一時停止</button>
     </div>
-    <p id="status" class="status" role="status"></p>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <section aria-labelledby="window-state-heading">
       <h2 id="window-state-heading">現在ウィンドウの状態</h2>
@@ -30,7 +30,7 @@
     </section>
 
     <section aria-labelledby="history-heading">
-      <h2 id="history-heading">最近自動で閉じたタブ</h2>
+      <h2 id="history-heading">最近自動で閉じたタブ <span id="history-count"></span></h2>
       <div id="history" class="history"></div>
     </section>
   </main>
